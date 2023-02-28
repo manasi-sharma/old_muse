@@ -9,9 +9,10 @@ if __name__ == '__main__':
     parser.add_argument('config', type=str, help="common params for all modules.")
     local_args, unknown = parser.parse_known_args()
 
-    params = load_base_config(local_args.config, unknown)
+    params, root = load_base_config(local_args.config, unknown)
+    exp_name = root.get_exp_name()
 
     print("----------------------- EXPERIMENT -----------------------")
-    print(f"exp_name = TODO")
+    print(f"exp_name = {exp_name}")
     # print("common_params = " + params.pprint(ret_string=True, str_max_len=None))
     print("params=" + params.pprint(ret_string=True))

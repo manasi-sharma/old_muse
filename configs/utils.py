@@ -1,5 +1,6 @@
 import importlib
 import os
+import re
 from collections import OrderedDict
 from pydoc import locate
 from typing import List
@@ -7,7 +8,28 @@ from typing import List
 from attrdict import AttrDict as d
 
 from muse.utils.file_utils import prepend_to_base_name
+from muse.utils.math_utils import round_to_n
 
+
+def hr_name(float_arg, fp=None):
+    if fp is not None:
+        float_arg = round_to_n(float_arg, n=fp)
+    return str(float_arg).replace('.', '_')
+
+
+def find_replace_brackets(string, params, fp=1):
+    pattern = '{([^{]+)}'
+    while re.search(pattern, string) is not None:
+        s = re.search(pattern, string).group(1)
+        assert s in params.leaf_keys(), f"Value for {s} (found in {string}) not found in params! "
+        string_value = params[s]
+        if isinstance(string_value, float):
+            string_value = hr_name(string_value, fp=fp)
+        else:
+            string_value = str(string_value)
+        string = string.replace(f'{{{s}}}', string_value)
+
+    return string
 
 def prefix_lines(long_str, prefix):
     lines = long_str.split('\n')
@@ -181,7 +203,7 @@ if __name__ == '__main__':
 
     """ testing split_local_and_group_args... """
 
-    test_args = "--a --b --c 10 %group1 --arg1 --arg2 %%subgroup11 --a 10 %group2 --arg1 --b %group3 --a string --yolo " \
+    test_args = "--a --b --c 10 --d 1.0 %group1 --arg1 --arg2 %%subgroup11 --a 10 %group2 --arg1 --b %group3 --a string --yolo " \
                 "%%subgroup31 test --a %%subgroup32 test2 --another --arg".split()
 
     local_args, nested_args = split_local_and_group_args(test_args, '%')
@@ -189,11 +211,12 @@ if __name__ == '__main__':
     print('local arguments:', local_args)
     print('nested_args ->', json.dumps(nested_args, indent=4))
 
+
     """ testing filter... """
 
-    loc, grp = filter_local_and_group_params(d(
+    fdc = d(
         real_arg1=1,
-        real_arg2=10,
+        real_arg2=10.,
         group1=d(
             cls=1,
             arg1=2,
@@ -202,6 +225,9 @@ if __name__ == '__main__':
             cls=3,
             arg1=4,
         ),
-    ))
+    )
+    loc, grp = filter_local_and_group_params(fdc)
     print(f'locals -> {loc.pprint(ret_string=True)}')
     print(f'groups -> {grp.pprint(ret_string=True)}')
+
+    print('exp_name:', find_replace_brackets('test_{real_arg1}-{real_arg2}', fdc))

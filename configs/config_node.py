@@ -3,7 +3,7 @@ import inspect
 import os
 import sys
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from typing import Tuple
+from typing import Tuple, Callable
 
 from attrdict import AttrDict as d
 from configs import utils as cu
@@ -54,6 +54,7 @@ class ConfigNode:
         self.cls_skip_args = None
 
         # parts of the params
+        self.local_exp_name = None
         self.local_params = None
         self.subgroups = None
         self.subgroup_names = []
@@ -250,6 +251,12 @@ class ConfigNode:
 
         self.params = self.process_params(namespace, self.params, global_params=global_params)
 
+        # set the local exp name if it was provided, and remove it from local_params
+        self.local_exp_name = self.default_local_exp_name
+        if 'exp_name' in self.local_params:
+            self.local_exp_name = self.local_params.exp_name
+            del self.local_params['exp_name']
+
         # this notes that all the local params have been loaded (and maybe some subgroups)
         self.is_loaded = True
 
@@ -274,7 +281,13 @@ class ConfigNode:
         str
 
         """
-        return self.default_local_exp_name
+        # allow support for a callable exp_name fn
+        local_exp_name = self.local_exp_name
+        if isinstance(local_exp_name, Callable):
+            local_exp_name = local_exp_name(self.full_params)
+        assert isinstance(local_exp_name, str), \
+            f"Local experiment name ({local_exp_name}) should be str, but was {type(local_exp_name)}!"
+        return cu.find_replace_brackets(local_exp_name, self.full_params)
 
     def get_exp_name(self, nested=True) -> str:
         """ Get the experiment name string for this node (nested: and its subclasses in order)
@@ -294,6 +307,7 @@ class ConfigNode:
             # depth first lookup of the experiment names of each subgroup.
             for key in self.subgroup_names:
                 exp_name += self.subgroups[key].get_exp_name(nested=True)
+        return exp_name
 
     # calling help on parsers to print messages using each help string
     def usage(self, prefix=''):

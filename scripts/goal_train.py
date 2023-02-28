@@ -20,8 +20,8 @@ if __name__ == '__main__':
     logger.debug(f"Raw command: \n{' '.join(sys.argv)}")
 
     # load the config
-    params = load_base_config(local_args.config, unknown)
-    exp_name = params.exp_name
+    params, root = load_base_config(local_args.config, unknown)
+    exp_name = root.get_exp_name()
 
     logger.debug(f"Using: {exp_name}")
     file_manager = ExperimentFileManager(exp_name,

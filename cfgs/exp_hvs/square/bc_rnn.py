@@ -18,9 +18,8 @@ from muse.policies.bc.gcbc_policy import GCBCPolicy
 export = d(
     batch_size=256,
     horizon=10,
-    # TODO exp_name='hvsBlock3D/velact_STATIC_seq_b256_lr0_0001_dec0_h10-10_' \
-    #          'human_square_30k_split0_9_bc_qt_normgrabil_no-vel_l2err_tanh_lstm-hs400-ps0',
-    exp_name="test",
+    dataset='human_square_30k',
+    exp_name='hvsBlock3D/velact_b{batch_size}_h{horizon}_{dataset}',
     # utils=utils,
     env_spec=d(
         cls=ParamEnvSpec,
@@ -32,7 +31,7 @@ export = d(
     dataset_train=np_seq.export & d(
         horizon=F('horizon'),
         batch_size=F('batch_size'),
-        file='data/hvsBlock3D/human_square_30k.npz',
+        file=F('dataset', lambda x: f'data/hvsBlock3D/{x}.npz'),
         batch_names_to_get=['policy_type', 'robot0_eef_pos', 'object', 'robot0_gripper_qpos', 'policy_switch',
                             'robot0_eef_quat', 'action'],
     ),
@@ -40,7 +39,7 @@ export = d(
         load_episode_range=[0.9, 1.0],
         horizon=F('horizon'),
         batch_size=F('batch_size'),
-        file='data/hvsBlock3D/human_square_30k.npz',
+        file=F('dataset', lambda x: f'data/hvsBlock3D/{x}.npz'),
         batch_names_to_get=['policy_type', 'robot0_eef_pos', 'object', 'robot0_gripper_qpos', 'policy_switch',
                             'robot0_eef_quat', 'action'],
     ),

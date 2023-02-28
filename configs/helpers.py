@@ -12,4 +12,4 @@ def make_base_config(base_params):
 def load_base_config(file, cmd_args):
     params = import_config_file(file).export
     root = make_base_config(params)
-    return root.load(cmd_args)
+    return root.load(cmd_args), root
