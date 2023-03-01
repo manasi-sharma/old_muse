@@ -1,6 +1,6 @@
 from attrdict import AttrDict as d
 
-from muse.datasets.dataset import SequentialSampler
+from muse.datasets.samplers.sampler import SequentialSampler
 from muse.datasets.np_sequence_dataset import NpSequenceDataset
 
 export = d(
