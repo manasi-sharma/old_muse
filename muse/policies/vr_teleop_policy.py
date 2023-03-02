@@ -13,7 +13,7 @@ import time
 import numpy as np
 from oculus_reader import OculusReader
 
-from muse.envs.interfaces import VRInterface
+from muse.envs.env_interfaces import VRInterface
 from muse.policies.policy import Policy
 from muse.envs.bullet_envs.control_utils import orientation_error
 from muse.utils.geometry_utils import clip_ee_orientation_conical

@@ -8,7 +8,7 @@ import torch
 from muse.metrics.metric import Metric
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
-from muse.utils.script_utils import is_next_cycle
+from muse.utils.general_utils import is_next_cycle
 
 
 class Tracker:

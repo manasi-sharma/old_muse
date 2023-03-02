@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 from muse.policies.random_shooting import OptimizerPolicy
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import broadcast_dims, torch_clip, to_torch, \

@@ -1,8 +1,8 @@
 import torch
 from attrdict import AttrDict as d
 
-from muse.sandbox.new_trainer.goal_trainer import GoalTrainer
-from muse.sandbox.new_trainer.optimizer import SingleOptimizer
+from muse.trainers.goal_trainer import GoalTrainer
+from muse.trainers.optimizers.optimizer import SingleOptimizer
 
 from cfgs.trainer import reward_tracker
 

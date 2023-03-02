@@ -19,7 +19,7 @@ from muse.models.vision import vision_encoders as ve
 from muse.utils.abstract import Argument
 from muse.utils.param_utils import LayerParams, build_mlp_param_list, SequentialParams, get_policy_dist_out_size, \
     get_policy_dist_cap
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default, get_or_instantiate_cls

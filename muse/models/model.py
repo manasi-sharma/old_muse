@@ -11,7 +11,7 @@ from muse.experiments import logger
 from muse.metrics.metric import Metric
 from muse.utils.abstract import BaseClass
 from muse.models.dist.layers import DistributionCap
-from muse.utils.python_utils import timeit, subclass_overrides_fn
+from muse.utils.general_utils import timeit, subclass_overrides_fn
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import to_torch

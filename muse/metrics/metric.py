@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from attrdict import AttrDict as d
-from muse.utils.python_utils import is_array
+from muse.utils.general_utils import is_array
 from muse.utils.torch_utils import numel
 
 

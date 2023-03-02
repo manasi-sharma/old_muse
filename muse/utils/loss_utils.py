@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import distributions as D, nn as nn
 from torch.nn import functional as F
 
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict as d
 from muse.utils.torch_utils import split_dim, to_torch, combine_after_last_dim, concatenate, combine_after_dim, \
     unsqueeze_then_gather, log_sum_exp

@@ -4,7 +4,7 @@ from muse.experiments import logger
 from muse.models.bc.lmp.lmp_grouped import LMPGroupedModel
 from muse.datasets.fast_np_interaction_dataset import NpInteractionDataset
 from muse.models.dist.helpers import detach_normal
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import broadcast_dims

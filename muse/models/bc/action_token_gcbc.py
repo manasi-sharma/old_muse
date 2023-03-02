@@ -3,7 +3,7 @@ import torch
 from muse.models.bc.gcbc import TransformerGCBC
 from muse.models.bc.lmp import play_helpers
 from muse.utils.abstract import Argument
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default

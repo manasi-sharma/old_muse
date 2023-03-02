@@ -3,8 +3,6 @@ import queue
 import threading
 import warnings
 
-import PIL
-import PIL.Image
 import numba
 import numpy as np
 from muse.experiments.file_manager import FileManager
@@ -13,7 +11,7 @@ import torch
 from numba import NumbaPendingDeprecationWarning
 
 from muse.experiments import logger
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 
 warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)

@@ -8,13 +8,12 @@ from attrdict.utils import get_with_default, get_or_instantiate_cls
 from torch.nn.utils.rnn import pad_sequence
 
 from muse.datasets.dataset import Dataset
-from muse.datasets.preprocess.batch_processor import BatchProcessor
 from muse.datasets.preprocess.data_preprocessor import DataPreprocessor
 from muse.experiments import logger
 from muse.experiments.file_manager import ExperimentFileManager
 from muse.utils.file_utils import file_path_with_default_dir, postpend_to_base_name, prepend_to_base_name
 from muse.utils.np_utils import np_pad_sequence
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from muse.utils.torch_utils import split_dim_np, split_dim, broadcast_dims, broadcast_dims_np, pad_dims, \
     combine_after_dim, to_torch, concatenate
 
@@ -104,12 +103,6 @@ class NpDataset(Dataset):
                 assert isinstance(dp, DataPreprocessor)
             logger.debug(f"Dataset using preprocessor: {self._data_preprocessors[i].name}")
 
-        # modifies batches
-        self._batch_processor = params << "batch_processor"
-        if params << "batch_processor" is not None:
-            logger.debug(f"Using batch processor: {params["batch_processor/cls"]}")
-            self._batch_processor = get_or_instantiate_cls(params, "batch_processor", BatchProcessor)
-
         # names to add to final_names (prepended by goal/ or param/), when loading (in case they were not saved in original dataset, e.g. goal conditioning).
         self._allow_missing_onetime = get_with_default(params, "allow_missing_onetime", True)
 
@@ -118,9 +111,6 @@ class NpDataset(Dataset):
         # if True, final names are loaded to "inputs", else "outputs".
         self._final_names_as_inputs = get_with_default(params, "final_names_as_inputs", True)
 
-        # when to run batch processor in _get_batch
-        self._batch_processor_before_torch = get_with_default(params, "batch_processor_before_torch",
-                                                              not self._index_all_keys)
 
         # names that we want to load but are not in existing datadict
         self.temporary_names = []
@@ -185,10 +175,6 @@ class NpDataset(Dataset):
             # number of valid samples, sample proportional to period length
             self._period_probs = 1 / self._sampling_period_lengths
         self._period_probs /= self._period_probs.sum()
-
-        # setup the batch processor with this dataset.
-        if self._batch_processor is not None:
-            self._batch_processor.setup(self)
 
         if self._index_all_keys:
             logger.debug("Merging datasets...")
@@ -711,7 +697,6 @@ class NpDataset(Dataset):
 
         meta = d()
         if self._index_all_keys:
-            assert self._batch_processor is None or not self._batch_processor_before_torch, "Batch processor must be after torch if specified."
             # this indexes by the combined dataset (all keys at once, names_to_get will be parsed from this)
             inputs, outputs = self._get_batch_index_into_merged_datadict(indices, episode_indices, names_to_get,
                                                                          local_batch_size,
@@ -724,11 +709,6 @@ class NpDataset(Dataset):
                                                                   chunk_lengths, do_padding, self.horizon,
                                                                   np_pad=np_pad)
 
-            if self._batch_processor is not None and self._batch_processor_before_torch:
-                # default behavior is episode_indices == period_indices
-                inputs, outputs, meta = self._batch_processor.forward(inputs, outputs, indices, episode_indices,
-                                                                      episode_indices, names_to_get, chunk_lengths)
-
             with timeit("get_batch/to_device"):
                 if torch_device is not None:
                     for dc in (inputs, outputs, meta):
@@ -736,10 +716,6 @@ class NpDataset(Dataset):
                             dc.leaf_modify(lambda x: x.to(torch_device, non_blocking=non_blocking))
                         else:
                             dc.leaf_modify(lambda x: torch.from_numpy(x).to(torch_device, non_blocking=non_blocking))
-
-        if self._batch_processor is not None and not self._batch_processor_before_torch:
-            inputs, outputs, meta = self._batch_processor.forward(inputs, outputs, indices, episode_indices,
-                                                                  episode_indices, names_to_get, chunk_lengths)
 
         return inputs, outputs, meta
 

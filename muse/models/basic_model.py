@@ -12,7 +12,7 @@ from muse.envs.param_spec import ParamEnvSpec
 from muse.experiments import logger
 from muse.models.model import Model
 from muse.utils.param_utils import SequentialParams, LayerParams
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import concatenate

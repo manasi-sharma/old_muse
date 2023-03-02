@@ -11,7 +11,7 @@ from muse.experiments import logger
 
 from muse.metrics.metric import ExtractMetric
 from muse.metrics.tracker import BufferedTracker, Tracker
-from muse.utils.python_utils import is_next_cycle, listify
+from muse.utils.general_utils import is_next_cycle, listify
 from muse.utils.torch_utils import to_numpy, add_horizon_dim, torch_mappable, to_torch
 
 from attrdict import AttrDict

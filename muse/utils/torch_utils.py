@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Optional, Mapping, Union
 
-from muse.utils.python_utils import is_array
+from muse.utils.general_utils import is_array
 from attrdict import AttrDict
 
 numpy_to_torch_dtype_dict = {

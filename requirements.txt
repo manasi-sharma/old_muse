@@ -21,3 +21,4 @@ tensorboard
 binpacking
 cloudpickle
 pygame
+gymnasium

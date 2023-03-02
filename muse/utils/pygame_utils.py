@@ -6,7 +6,7 @@ from typing import Callable
 
 from muse.experiments import logger
 from muse.utils.input_utils import UserInput, UniqueInput, KeyInput
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 

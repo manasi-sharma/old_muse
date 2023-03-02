@@ -17,7 +17,7 @@ from muse.envs.vectorize_env import VectorizedEnv
 from muse.experiments import logger
 from muse.metrics.metric import ExtractMetric
 from muse.metrics.tracker import Tracker, BufferedTracker
-from muse.utils.python_utils import is_next_cycle
+from muse.utils.general_utils import is_next_cycle
 from muse.utils.torch_utils import to_numpy, to_torch
 
 from attrdict import AttrDict

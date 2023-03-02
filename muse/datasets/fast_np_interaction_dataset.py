@@ -4,7 +4,7 @@ import torch
 from muse.datasets.np_dataset import NpDataset
 from muse.experiments import logger
 from muse.utils.np_utils import np_idx_range_between
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import combine_dims, combine_dims_np

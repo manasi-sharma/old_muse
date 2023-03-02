@@ -17,7 +17,7 @@ def get_normalized_quat(pose):
     if pose.shape[-1] in [7, 8, 10, 11]:
         q = pose[..., 3:7]
     elif pose.shape[-1] == 6:
-        q = fast_euler2quat_ext(pose[..., 3:]).astype(pose.dtype)
+        q = fast_euler2quat(pose[..., 3:]).astype(pose.dtype)
     else:
         raise NotImplementedError(str(pose.shape))
 
@@ -698,7 +698,7 @@ def convert_euler_quat_2mat(ori):
         raise ValueError("Invalid orientation dim of len {}".format(len(ori)))
 
 
-def fast_quat2euler_ext(quat):
+def fast_quat2euler(quat):
     # https://stackoverflow.com/questions/56207448/efficient-quaternions-to-euler-transformation
     assert quat.shape[-1] == 4
     x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
@@ -720,7 +720,7 @@ def fast_quat2euler_ext(quat):
     return np.stack([X, Y, Z], axis=-1)
 
 
-def fast_euler2quat_ext(eul):
+def fast_euler2quat(eul):
     # https://stackoverflow.com/questions/53033620/how-to-convert-euler-angles-to-quaternions-and-get-the-same-euler-angles-back-fr
     assert eul.shape[-1] == 3
     roll, pitch, yaw = eul[..., 0], eul[..., 1], eul[..., 2]
@@ -749,7 +749,8 @@ def fast_euler2quat_ext(eul):
 
 
 if __name__ == '__main__':
-    from muse.utils.python_utils import timeit
+    from muse.utils.general_utils import timeit
+
     for i in range(100):
         euler = np.random.uniform([-np.pi, -np.pi, -np.pi/2], [np.pi, np.pi, np.pi/2])
         quat = euler2quat_intrinsic(euler)
@@ -774,7 +775,7 @@ if __name__ == '__main__':
         with timeit("euler2quat"):
             quat = euler2quat(eul)
         with timeit("fast_euler2quat"):
-            quat_fast = fast_euler2quat_ext(eul)
+            quat_fast = fast_euler2quat(eul)
 
         # testing euler -> quat
         q_err = quat_angle(quat, quat_fast)
@@ -785,7 +786,7 @@ if __name__ == '__main__':
             _ = quat2euler(quat)
 
         with timeit("fast_quat2euler"):
-            eul_fast_from_quat = fast_quat2euler_ext(quat)
+            eul_fast_from_quat = fast_quat2euler(quat)
 
         quat_of_eul_fast_from_quat = euler2quat(eul_fast_from_quat)
         q_err2 = quat_angle(quat, quat_of_eul_fast_from_quat)
@@ -811,3 +812,38 @@ if __name__ == '__main__':
     print(timeit)
     timeit.reset()
     print("done.")
+
+
+def convert_rpt(roll, phi, theta, bias=np.array([0, -np.pi/2, 0])):
+
+    # returns quat and eul
+    rot1 = R.from_rotvec([0, 0, bias[0] + roll])
+    rot2 = R.from_rotvec([bias[1] + phi, 0, 0])
+    rot3 = R.from_rotvec([0, 0, bias[2] + theta])
+    chained = rot3 * rot2 * rot1
+    return chained.as_quat(), chained.as_euler("xyz")
+
+
+def convert_eul_to_rpt(eul, bias=np.array([0, -np.pi/2, 0])):
+    # returns quat and eul
+    chained = R.from_euler("xyz", eul)
+    rpt = chained.as_euler("zxz") - bias
+    return rpt
+
+
+def convert_rpt_to_quat_eul(rpt, bias=np.array([0, -np.pi/2, 0])):
+    rot = R.from_euler("zxz", rpt + bias)
+    return rot.as_quat(), rot.as_euler("xyz")
+
+
+def convert_quat_to_rpt(quat, bias=np.array([0, -np.pi/2, 0])):
+    # returns r,p,t
+    chained = R.from_quat(quat)
+    rpt = chained.as_euler("zxz") - bias
+    return rpt
+
+
+circ = [False] * 3 + [True] * 3
+def pose_difference_fn(pose1, pose2):
+    return np.array(
+        [circular_difference(pose1[i], pose2[i]) if circ[i] else pose1[i] - pose2[i] for i in range(len(pose1))])

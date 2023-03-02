@@ -1,4 +1,4 @@
-from muse.models.dynas.dynas_gcbc_model import RNN_DAS_GCBC
+from muse.models.bc.hydra import RNN_DAS_GCBC
 from muse.utils.loss_utils import get_default_mae_action_loss_fn
 from attrdict import AttrDict as d
 

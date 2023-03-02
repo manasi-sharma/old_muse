@@ -9,7 +9,7 @@ from muse.models.model import Model
 from muse.models.rl.sac.critic import REDQCritic
 from muse.models.dist.layers import SquashedNormal
 from muse.utils.file_utils import prepend_to_base_name
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import to_torch, get_zeroth_horizon

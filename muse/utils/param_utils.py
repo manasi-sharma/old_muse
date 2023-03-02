@@ -6,7 +6,7 @@ from typing import List, Mapping
 from muse.models.pretrained.pretrained_models import custom_model_map, pretrained_model_map
 from muse.models.dist.layers import GaussianDistributionCap, SoftmaxMixtureSameFamily
 from attrdict import AttrDict as d
-from muse.utils.supported import activation_map, layer_map, reshape_map, dist_cap_map
+from muse.models.layers.supported import activation_map, layer_map, reshape_map, dist_cap_map
 from muse.utils.torch_utils import BranchedModules, zero_weight_init
 
 all_layer_map = {**layer_map, **activation_map, **reshape_map, **dist_cap_map,

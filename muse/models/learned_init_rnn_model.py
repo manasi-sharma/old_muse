@@ -1,7 +1,8 @@
 from typing import Tuple, List
 
 from muse.models.rnn_model import RnnModel
-from muse.utils.python_utils import get_with_default, timeit
+from muse.utils.python_utils import get_with_default
+from muse.utils.general_utils import timeit
 from muse.utils.torch_utils import concatenate, combine_after_dim
 
 

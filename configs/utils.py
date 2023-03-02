@@ -8,7 +8,7 @@ from typing import List
 from attrdict import AttrDict as d
 
 from muse.utils.file_utils import prepend_to_base_name
-from muse.utils.math_utils import round_to_n
+from muse.utils.general_utils import round_to_n
 
 
 def hr_name(float_arg, fp=None):

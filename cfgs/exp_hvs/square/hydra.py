@@ -11,8 +11,8 @@ from muse.envs.param_spec import ParamEnvSpec
 from muse.envs.robosuite.robosuite_env import get_rs_example_spec_params
 from muse.policies.basic_policy import BasicPolicy
 from muse.policies.bc.gcbc_policy import GCBCPolicy
-from muse.sandbox.new_trainer.goal_trainer import GoalTrainer
-from muse.sandbox.new_trainer.optimizer import SingleOptimizer
+from muse.trainers.goal_trainer import GoalTrainer
+from muse.trainers.optimizers.optimizer import SingleOptimizer
 from muse.utils.config_utils import parse_cfgs, get_config_args
 from muse.utils.python_utils import AttrDict as d
 

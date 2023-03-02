@@ -8,7 +8,7 @@ from muse.experiments import logger
 from muse.trainers.base_goal_trainer import BaseGoalTrainer
 from muse.trainers.optimizers.optimizer import SingleOptimizer
 
-from muse.utils.python_utils import timeit, is_next_cycle
+from muse.utils.general_utils import timeit, is_next_cycle
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default, get_cls_param_instance

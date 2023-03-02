@@ -7,7 +7,7 @@ from muse.datasets.preprocess.data_augmentation import DataAugmentation
 from muse.experiments import logger
 from muse.trainers.base_goal_trainer import BaseGoalTrainer
 from muse.trainers.optimizers.optimizer import SingleOptimizer
-from muse.utils.python_utils import is_next_cycle, listify
+from muse.utils.general_utils import is_next_cycle, listify
 from attrdict import AttrDict
 from attrdict.utils import get_with_default, get_cls_param_instance
 from muse.python_utils import timeit

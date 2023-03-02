@@ -12,7 +12,7 @@ from muse.grouped_models.grouped_model import GroupedModel
 from muse.models.basic_model import BasicModel
 from muse.models.function_model import FunctionModel
 from muse.utils.param_utils import SequentialParams, LayerParams
-from muse.utils.python_utils import timeit, is_next_cycle
+from muse.utils.general_utils import timeit, is_next_cycle
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default

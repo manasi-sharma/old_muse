@@ -8,7 +8,7 @@ import numpy as np
 
 from muse.envs.env import Env
 from muse.utils.file_utils import prepend_to_base_name
-from muse.utils.python_utils import AttrDict as d
+from attrdict import AttrDict as d
 
 # TODO move this elsewhere
 class Utils:
@@ -30,7 +30,7 @@ def bool_cond_add_to_exp_name(name, params, args_or_arg2abbrev, abbrevs=None, se
 
     for key, abbrev in arg2abbrev:
         # checks if key is True
-        if params >> key:
+        if params[key]:
             name += f"{sep}{abbrev}"
 
     return name

@@ -88,10 +88,10 @@ class KMeansDiscretize(Discretize):
             # DISCRETE -> CONTINUOUS
             centroid = inputs << self.centroid_name
             if centroid is None:
-                embed_idxs = inputs >> self.idxs_name
+                embed_idxs = inputs[self.idxs_name]
                 centroid = F.embedding(embed_idxs, self.embed.transpose(0, 1))
 
-            res = inputs >> self.residual_name
+            res = inputs[self.residual_name]
             res_flat = concatenate(res.leaf_apply(lambda arr: combine_after_dim(arr, 2)),
                                    self.discrete_input_names, dim=-1)
             cont = centroid + res_flat

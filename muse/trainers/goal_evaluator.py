@@ -2,7 +2,7 @@ import numpy as np
 
 from muse.experiments import logger
 from muse.trainers.base_goal_trainer import BaseGoalTrainer
-from muse.utils.python_utils import timeit, is_next_cycle
+from muse.utils.general_utils import timeit, is_next_cycle
 
 from attrdict import AttrDict
 

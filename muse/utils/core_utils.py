@@ -8,7 +8,7 @@ import cloudpickle
 import numpy as np
 import resource
 
-from muse.utils.python_utils import AttrDict
+from attrdict import AttrDict
 
 
 class CloudPickleWrapper(object):

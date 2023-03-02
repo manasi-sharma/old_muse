@@ -1,7 +1,7 @@
 import torch
 
 from muse.metrics.metric import Metric, ElementwiseMetric, MultiTaskMetric, maximum, minimum
-from muse.utils.python_utils import get_from_ls
+from muse.utils.general_utils import get_from_ls
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default

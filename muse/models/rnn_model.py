@@ -22,7 +22,7 @@ from muse.experiments import logger
 from muse.models.basic_model import BasicModel
 from muse.models.model import Model
 from muse.utils.param_utils import LayerParams
-from muse.utils.python_utils import timeit, is_next_cycle
+from muse.utils.general_utils import timeit, is_next_cycle
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import concatenate

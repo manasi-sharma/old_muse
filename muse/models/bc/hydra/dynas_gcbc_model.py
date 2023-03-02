@@ -17,7 +17,7 @@ from muse.models.rnn_model import RnnModel
 from muse.utils.abstract import Argument, resolve_arguments
 from muse.utils.param_utils import get_policy_dist_cap, SequentialParams, build_mlp_param_list, LayerParams, \
     get_policy_dist_out_size
-from muse.utils.python_utils import timeit, is_next_cycle
+from muse.utils.general_utils import timeit, is_next_cycle
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default, get_or_instantiate_cls

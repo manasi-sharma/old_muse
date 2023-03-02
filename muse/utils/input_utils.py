@@ -9,7 +9,7 @@ import enum
 from typing import List, Dict, Callable
 
 from muse.experiments import logger
-from muse.utils.python_utils import timeit
+from muse.utils.general_utils import timeit
 
 from attrdict import AttrDict
 from attrdict.utils import get_cls_param_instance, get_with_default
