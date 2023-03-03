@@ -103,21 +103,21 @@ class DiffusionModel(Model):
         #     horizon, observation_dim, cond_slice_dim, n_timesteps=1000,
         #     clip_denoised=False, predict_epsilon=True,
         # ):
-        self.inputs = get_required(params, "model_inputs")
+        self.inputs = params["model_inputs"]
         self.input_size = self.env_spec.dim(self.inputs)
 
         # these are the inputs to the conditioning portion of the model.
-        self.extra_inputs = get_required(params, "model_extra_inputs")
+        self.extra_inputs = params["model_extra_inputs"]
         self.extra_input_size = self.env_spec.dim(self.extra_inputs)
 
-        # self.output = str(get_required(params, "model_output"))
+        # self.output = str(params["model_output"])
         self.generator = (params["network"]).to_module_list(as_sequential=True).to(self.device)
 
         # if > 0, will use dynamics loss with this weighting
         self.dynamics_beta = get_with_default(params, "dynamics_beta", 0)
         if self.dynamics_beta > 0:
-            self.state_names = get_required(params, "state_names")  # outputs of model
-            # self.action_names = get_required(params, "action_names")  # other inputs
+            self.state_names = params["state_names"]  # outputs of model
+            # self.action_names = params["action_names"]  # other inputs
             # dynamics go inputs -> next states
             # assert set(self.state_names).isdisjoint(self.action_names)
             # assert set(self.state_names).union(self.action_names) == set(self.inputs), \
@@ -125,7 +125,7 @@ class DiffusionModel(Model):
             self.dynamics = (params["dynamics_network"]).to_module_list(as_sequential=True).to(self.device)
             logger.info(f"Diffusion using dynamics penalty (beta = {self.dynamics_beta})")
 
-        self.num_diffusion_steps = int(get_required(params, "num_diffusion_steps"))
+        self.num_diffusion_steps = int(params["num_diffusion_steps"])
         self.clip_denoised = get_with_default(params, "clip_denoised", False)
         self.predict_epsilon = get_with_default(params, "predict_epsilon", True)
 

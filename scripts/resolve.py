@@ -1,11 +1,11 @@
 import argparse
 
-from configs.helpers import load_base_config
+from configs.helpers import load_base_config, get_script_parser
 
 if __name__ == '__main__':
     # things we can use from command line
 
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = get_script_parser()
     parser.add_argument('config', type=str, help="common params for all modules.")
     local_args, unknown = parser.parse_known_args()
 

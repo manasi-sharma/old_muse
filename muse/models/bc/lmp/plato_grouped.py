@@ -5,7 +5,7 @@ from muse.models.bc.lmp.lmp_grouped import LMPGroupedModel
 from muse.datasets.fast_np_interaction_dataset import NpInteractionDataset
 from muse.models.dist.helpers import detach_normal
 from muse.utils.general_utils import timeit
-from attrdict import AttrDict
+from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
 from muse.utils.torch_utils import broadcast_dims
 
@@ -47,7 +47,7 @@ class PLATOGroupedModel(LMPGroupedModel):
                                                False)  # goal select happens within contact_sampler
         # assert isinstance(self._get_contact_start_ends, Callable)
         if self._dataset_train is not None:
-            assert isinstance(self._dataset_train, NpInteractionDataset)
+            assert isinstance(self._dataset_train, NpInteractionDataset), \
                     "Dataset must be compatible with reading interactions: {type(self._dataset_train)}"
 
         if self._do_init_policy:

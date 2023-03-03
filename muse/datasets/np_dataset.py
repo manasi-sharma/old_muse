@@ -51,6 +51,10 @@ class NpDataset(Dataset):
         # load only this many episodes
         self._initial_load_episodes = get_with_default(params, "initial_load_episodes", 0)
 
+        self._mmap_mode = get_with_default(params, "mmap_mode", None)
+        if self._mmap_mode is not None:
+            logger.info("Dataset using mmap mode: %s" % self._mmap_mode)
+
         # fraction based loading
         self._load_episode_range = params << "load_episode_range"
         self._min_frac = 0  # round up, inclusive
@@ -418,7 +422,7 @@ class NpDataset(Dataset):
         for data_preprocessor in self._data_preprocessors:
             local_dict, onetime_dict, split_indices = data_preprocessor.forward(self, local_dict, onetime_dict,
                                                                                 split_indices)
-            logger.debug(f"[Preprocessor]: {data_preprocessor.name}, length: {data_len} -> {len(local_dict["done"])}")
+            logger.debug(f"[Preprocessor]: {data_preprocessor.name}, length: {data_len} -> {len(local_dict['done'])}")
             logger.debug(f"New keys: {local_dict.list_leaf_keys()}, onetime: {onetime_dict.list_leaf_keys()}")
             data_len = len(local_dict["done"])
 

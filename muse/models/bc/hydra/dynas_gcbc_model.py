@@ -19,7 +19,7 @@ from muse.utils.param_utils import get_policy_dist_cap, SequentialParams, build_
     get_policy_dist_out_size
 from muse.utils.general_utils import timeit, is_next_cycle
 
-from attrdict import AttrDict
+from attrdict import AttrDict as d
 from attrdict.utils import get_with_default, get_or_instantiate_cls
 
 from muse.experiments import logger
@@ -156,17 +156,15 @@ class DynamicActionBaseGCBC(BaseGCBC):
         # some common parameters to use as a starting point
         return d(
             cls=self.sparse_model_cls,
-            params=d(
-                device=self.device,
-                model_inputs=self.sparse_in_names,
-                model_output=self.sparse_raw_out_name,
-                preproc_fn=self.sparse_preproc_fn,
-                postproc_fn=self.sparse_postproc_fn,
-                normalize_inputs=len(self.sparse_normalize_inputs) > 0,
-                normalization_inputs=self.sparse_normalize_inputs,
-                save_normalization_inputs=self.sparse_save_normalize_inputs,
-                default_normalize_sigma=self.default_normalize_sigma,
-            )
+            device=self.device,
+            model_inputs=self.sparse_in_names,
+            model_output=self.sparse_raw_out_name,
+            preproc_fn=self.sparse_preproc_fn,
+            postproc_fn=self.sparse_postproc_fn,
+            normalize_inputs=len(self.sparse_normalize_inputs) > 0,
+            normalization_inputs=self.sparse_normalize_inputs,
+            save_normalization_inputs=self.sparse_save_normalize_inputs,
+            default_normalize_sigma=self.default_normalize_sigma,
         )
 
     @abc.abstractmethod
@@ -213,9 +211,10 @@ class DynamicActionBaseGCBC(BaseGCBC):
 
         class_weights = None
         if self.balance_cross_entropy and len(self._dataset_train) > 0:
+            # TODO fix this.
             logger.debug(f"Loading mode class weights from dataset for training: {self._dataset_train}")
             assert isinstance(self._dataset_train, NpDataset)
-            modes = (self._dataset_train.get_datadict()[] self.]_mode_key).reshape(-1)
+            modes = self._dataset_train.get_datadict()[self._mode_key].reshape(-1)
             m_unique, m_count = np.unique(modes, return_counts=True)  # sorted
             assert len(m_unique) == 2, m_unique
             # weight according to likelihood
@@ -449,9 +448,7 @@ class DAS_SparseMLP_GCBC(DynamicActionBaseGCBC):
 
         return d(
             cls=BasicModel,
-            params=d(
-                network=self.sparse_mlp_network
-            )
+            network=self.sparse_mlp_network
         )
 
 

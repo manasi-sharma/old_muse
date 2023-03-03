@@ -1,20 +1,13 @@
 import random
 
-import numpy as np
 import torch
-from torch.distributions import kl_divergence
 from typing import Callable
 
-from muse.datasets.dataset import Dataset
-from muse.envs.param_spec import ParamEnvSpec
 from muse.experiments import logger
 from muse.grouped_models.grouped_model import GroupedModel
-from muse.models.basic_model import BasicModel
-from muse.models.function_model import FunctionModel
-from muse.utils.param_utils import SequentialParams, LayerParams
 from muse.utils.general_utils import timeit, is_next_cycle
 
-from attrdict import AttrDict
+from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
 
 from muse.utils.torch_utils import split_dim, broadcast_dims
@@ -155,70 +148,6 @@ class LMPGroupedModel(GroupedModel):
         for n in encoder_names:
             results.safe_combine(self._models[n](inputs, **kwargs), warn_conflicting=True)
         return results
-    #
-    # def policy_network_forward(self, inputs: d, do_obs_encoding=False, do_plan_proposal=False, current_horizon=None, sample=False, normalize=False, **kwargs):
-    #     """
-    #     Given start and goal (stacked), figure out the plan
-    #     :param inputs: (d)  (B x H x ...), with H >= 2 (passed in if not self.horizon)
-    #
-    #     :return model_outputs: (d)  (B x H-1 x ...), with H >= 2
-    #     """
-    #     inps = inputs.leaf_copy()
-    #     raise NotImplementedError
-    #
-    #     assert not do_plan_proposal or do_obs_encoding, "Need to encode obs if we are doing plan proposal"
-    #
-    #     if current_horizon is None:
-    #         current_horizon = self.horizon
-    #     assert current_horizon >= 2
-    #     # checking for broadcastable tensors
-    #     inps.leaf_assert(
-    #         lambda arr: not isinstance(arr, torch.Tensor) or arr.shape[1] == current_horizon or arr.shape[1] == 1)
-    #
-    #     if normalize and self.normalize_inputs:
-    #         inps = self.normalize_by_statistics(inps, self.normalization_inputs, shared_dtype=torch.float32)
-    #
-    #     if do_obs_encoding:
-    #         with timeit("policy_obs_encoding"):
-    #             embed_all = self.encoders_forward(inps)
-    #             inps.combine(embed_all)
-    #
-    #     with timeit("policy_select_goals"):
-    #         # AttrDict (B x H ...)
-    #         goal_states = self.goal_selector(inps)
-    #         # default mask is to include all states as attributed to this goal
-    #         inps.goal_states = goal_states
-    #
-    #     with timeit("policy_plan_proposal"):
-    #         if do_plan_proposal:
-    #             with timeit("policy_plan_proposal_forward"):
-    #                 plan_propose_ins = self.prior_input_selector(inps)
-    #                 plan_propose_outs = self.prior(plan_propose_ins)
-    #
-    #                 # sample from proposal otherwise, in policy for example
-    #                 plan_sample = self.plan_sample_fn(plan_propose_outs)
-    #                 plan_sample.leaf_modify(lambda arr: arr[:, None])
-    #
-    #         # plan must be (B, 1, zdim) or (B, H, zdim)
-    #         plan_sample = inps.leaf_filter_keys([self.plan_name])\
-    #             .leaf_apply(lambda arr: broadcast_dims(arr, [1], [current_horizon]))
-    #
-    #         inps.combine(plan_sample)
-    #
-    #     with timeit("policy_input_selector"):
-    #         policy_ins = self.policy_input_selector(inps)
-    #
-    #     with timeit("policy_forward"):
-    #         # first get goals
-    #         action = self.policy(policy_ins, **kwargs)
-    #
-    #     if sample:
-    #         with timeit("policy_network_sample"):
-    #             action = self.action_sample_fn(action)
-    #             for key in self.action_names:
-    #                 assert action.has_leaf_key(key)
-    #
-    #     return action
 
     def _prepare_inputs(self, inputs, preproc=True, current_horizon=None) -> d:
         # accept tuple inputs

@@ -8,24 +8,22 @@ from cfgs.model import bc_rnn
 
 from cfgs.trainer import rm_goal_trainer
 from configs.fields import Field as F
-from muse.envs.param_spec import ParamEnvSpec
-from muse.envs.robosuite.robosuite_env import get_rs_example_spec_params
+from muse.envs.robosuite.robosuite_env import RobosuiteEnv
+from muse.envs.robosuite.robosuite_utils import get_rs_online_action_postproc_fn
 from muse.policies.basic_policy import BasicPolicy
 from muse.policies.bc.gcbc_policy import GCBCPolicy
-
-# utils = Robot3DLearningUtils(fast_dynamics=True)
+from muse.policies.memory_policy import get_timeout_terminate_fn
 
 export = d(
+    device="cuda",
     batch_size=256,
     horizon=10,
     dataset='human_square_30k',
     exp_name='hvsBlock3D/velact_b{batch_size}_h{horizon}_{dataset}',
     # utils=utils,
-    env_spec=d(
-        cls=ParamEnvSpec,
-    ) & get_rs_example_spec_params("NutAssemblySquare", img_width=84, img_height=84),
+    env_spec=RobosuiteEnv.get_default_env_spec_params(square.export),
     env_train=square.export,
-    model=bc_rnn.export,
+    model=bc_rnn.export & d(device=F('device')),
 
     # sequential dataset modifications (adding input file)
     dataset_train=np_seq.export & d(
@@ -52,8 +50,8 @@ export = d(
         policy_out_names=['action'],
         policy_out_norm_names=[],
         fill_extra_policy_names=True,
-        # TODO online_action_postproc_fn=utils.default_online_action_postproc_fn,
-        is_terminated_fn=lambda model, obs, goal, mem, **kwargs: False if mem.is_empty() else mem >> "count" >= 400,
+        online_action_postproc_fn=get_rs_online_action_postproc_fn(no_ori=False, fast_dynamics=True),
+        is_terminated_fn=get_timeout_terminate_fn(400),
     ),
     goal_policy=d(
         cls=BasicPolicy,

@@ -245,16 +245,14 @@ if __name__ == '__main__':
     # (H-1, VIS + PROPRIO + PLAN) -> (H-1, ACTION)
     policy_params = AttrDict(
         cls=RnnModel,
-        params=AttrDict(
-            device=DEVICE,
-            recurrent_net=LayerParams("relu"),  # for testing
-            net_use_hidden=False,
-            model_inputs=['state'],
-            model_output='action_dist',
-            rnn_output_name='rnn_output',
-            hidden_name='rnn_hidden',
-            forward_fn=lambda model, inps: AttrDict(
-                action_dist=torch.distributions.Normal(inps.state, scale=1e-11)
-            )
+        device=DEVICE,
+        recurrent_net=LayerParams("relu"),  # for testing
+        net_use_hidden=False,
+        model_inputs=['state'],
+        model_output='action_dist',
+        rnn_output_name='rnn_output',
+        hidden_name='rnn_hidden',
+        forward_fn=lambda model, inps: AttrDict(
+            action_dist=torch.distributions.Normal(inps.state, scale=1e-11)
         )
     )

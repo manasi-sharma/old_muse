@@ -1,12 +1,12 @@
 import argparse
 import sys
 
-from configs.helpers import load_base_config
+from configs.helpers import load_base_config, get_script_parser
 from muse.experiments import logger
 from muse.experiments.file_manager import ExperimentFileManager
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = get_script_parser()
     parser.add_argument('config', type=str, help="common params for all modules.")
     parser.add_argument('--continue', action='store_true')
     parser.add_argument('--print_all', action='store_true')

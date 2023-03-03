@@ -7,10 +7,9 @@ from muse.datasets.preprocess.data_augmentation import DataAugmentation
 from muse.experiments import logger
 from muse.trainers.base_goal_trainer import BaseGoalTrainer
 from muse.trainers.optimizers.optimizer import SingleOptimizer
-from muse.utils.general_utils import is_next_cycle, listify
+from muse.utils.general_utils import is_next_cycle, listify, timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default, get_cls_param_instance
-from muse.python_utils import timeit
 
 
 class GoalTrainer(BaseGoalTrainer):
@@ -87,7 +86,7 @@ class GoalTrainer(BaseGoalTrainer):
 
         # env STEP (one step)
         self._step_train_env_every_n_steps = int(params["step_train_env_every_n_steps"])
-        self._step_train_env_n_per_step = get_with_default(para["step_train_env_n_per_step"], 1)
+        self._step_train_env_n_per_step = get_with_default(params, "step_train_env_n_per_step", 1)
         self._step_holdout_env_every_n_steps = int(params["step_holdout_env_every_n_steps"])
         self._step_holdout_env_n_per_step = get_with_default(params, "step_holdout_env_n_per_step", 1)
         self._log_every_n_steps = int(params["log_every_n_steps"])
@@ -136,7 +135,7 @@ class GoalTrainer(BaseGoalTrainer):
             if self._optimizer is None:
                 self._optimizer = SingleOptimizer(params["optimizer"], self._model, datasets=self._datasets_train)
             elif isinstance(self._optimizer, AttrDict):
-                self._optimizer = self._optimizer.cls(self._optimizer.params, self._model,
+                self._optimizer = self._optimizer.cls(self._optimizer, self._model,
                                                       datasets=self._datasets_train)
         else:
             logger.warn("Model has no parameters...")

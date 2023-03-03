@@ -6,7 +6,7 @@ from muse.datasets.samplers.sampler import SequentialSampler
 export = d(
     cls=Hdf5Dataset,
     file='/tmp/null.hdf5',
-    cache=False,
+    cache=True,
     load_episode_range=[0.0, 0.9],
     load_from_base=False,
     pad_end_sequence=True,

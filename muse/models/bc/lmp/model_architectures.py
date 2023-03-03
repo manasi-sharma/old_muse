@@ -11,7 +11,8 @@ from muse.models.rnn_model import RnnModel
 from muse.utils.param_utils import LayerParams, SequentialParams, build_mlp_param_list
 from muse.utils.torch_utils import combine_after_dim, concatenate
 
-from attrdict import AttrDict
+from attrdict import AttrDict as d
+
 
 def check_names_and_sizes(lmp_names_and_sizes: d, required):
     # check for lmp required names
@@ -42,32 +43,30 @@ def get_default_lmp_posterior_params(ns, device, plan_name, plan_size, hidden_si
 
     posterior = d(
         cls=RnnModel,
-        params=d(
-            model_inputs=ns.TRAJECTORY_NAMES,  # requires the action
-            model_output=plan_name + "_dist",
-            device=device,
-            preproc_fn=lambda inputs: inputs & \
-                                      inputs.leaf_filter_keys(ns.TRAJECTORY_NAMES)
-                                          .leaf_apply(lambda arr: combine_after_dim(arr, 2)),  # (B x H x D)
-            rnn_output_name="rnn_output_plan_recog",
-            hidden_name="hidden_plan_recog",
-            rnn_before_net=True,
+        model_inputs=ns.TRAJECTORY_NAMES,  # requires the action
+        model_output=plan_name + "_dist",
+        device=device,
+        preproc_fn=lambda inputs: inputs & \
+                                  inputs.leaf_filter_keys(ns.TRAJECTORY_NAMES)
+                                  .leaf_apply(lambda arr: combine_after_dim(arr, 2)),  # (B x H x D)
+        rnn_output_name="rnn_output_plan_recog",
+        hidden_name="hidden_plan_recog",
+        rnn_before_net=True,
 
-            recurrent_network=LayerParams('gru', input_size=ns.TRAJECTORY_SIZE,
-                                          hidden_size=posterior_hidden_size, num_layers=2,
-                                          bidirectional=True, batch_first=True, dropout=dropout),
-            # rnn outputs (B x Seq x Hidden)
-            network=SequentialParams([
-                LayerParams("list_select", list_index=-1, dim=1),
-                # last sequence element, (B x hidden_size*2)
-                LayerParams("linear", in_features=2 * posterior_hidden_size,
-                            out_features=2 * posterior_hidden_size, bias=True),
-                LayerParams("relu"),  # TODO
-                LayerParams("linear", in_features=2 * posterior_hidden_size,
-                            out_features=plan_intermediate_size, bias=True),
-                *out_layers
-            ]),
-        ),
+        recurrent_network=LayerParams('gru', input_size=ns.TRAJECTORY_SIZE,
+                                      hidden_size=posterior_hidden_size, num_layers=2,
+                                      bidirectional=True, batch_first=True, dropout=dropout),
+        # rnn outputs (B x Seq x Hidden)
+        network=SequentialParams([
+            LayerParams("list_select", list_index=-1, dim=1),
+            # last sequence element, (B x hidden_size*2)
+            LayerParams("linear", in_features=2 * posterior_hidden_size,
+                        out_features=2 * posterior_hidden_size, bias=True),
+            LayerParams("relu"),  # TODO
+            LayerParams("linear", in_features=2 * posterior_hidden_size,
+                        out_features=plan_intermediate_size, bias=True),
+            *out_layers
+        ]),
     )
 
     if attention_posterior:
@@ -77,7 +76,7 @@ def get_default_lmp_posterior_params(ns, device, plan_name, plan_size, hidden_si
         posterior_in_names = ns.TRAJECTORY_NAMES + [f'goal_states/{name}' for name in ns.PRIOR_GOAL_STATE_NAMES]
 
         if goal_stack_posterior:
-            posterior.params.combine(d(
+            posterior.combine(d(
                 preproc_fn=get_goal_preproc_fn(ns.TRAJECTORY_NAMES, ns.PRIOR_GOAL_STATE_NAMES),
                 model_inputs=posterior_in_names,
                 recurrent_network=LayerParams('gru', input_size=ns.TRAJECTORY_SIZE + ns.PRIOR_GOAL_IN_SIZE,
@@ -97,10 +96,10 @@ def get_default_lmp_posterior_params(ns, device, plan_name, plan_size, hidden_si
 
                 return torch.cat([last_rnn_out, flat_goal], dim=-1)
 
-            posterior.params.combine(d(
+            posterior.combine(d(
                 preproc_fn=lambda inputs: inputs & \
                                           (inputs > posterior_in_names)
-                                              .leaf_apply(lambda arr: combine_after_dim(arr, 2)),  # (B x H x D)
+                                          .leaf_apply(lambda arr: combine_after_dim(arr, 2)),  # (B x H x D)
                 parallel_model=d(cls=FunctionModel,
                                  params=d(device=device,
                                           forward_fn=lambda model, ins:
@@ -138,20 +137,18 @@ def get_default_lmp_prior_params(ns, DEVICE, plan_name, plan_size, proposal_widt
     net_extra_layers = [proposal_width] * prior_extra_layers
     prior = d(
         cls=BasicModel,
-        params=d(
-            normalize_inputs=False,
-            normalization_inputs=[],
-            model_inputs=ns.PRIOR_NAMES,
-            model_output=plan_name + "_dist",
-            preproc_fn=lambda inputs: inputs.leaf_filter_keys(ns.PRIOR_NAMES)
-                .leaf_apply(lambda arr: combine_after_dim(arr, 1)),  # # (B x D)
-            device=DEVICE,
-            network=SequentialParams(
-                build_mlp_param_list(ns.PRIOR_IN_SIZE,
-                                     [proposal_width, proposal_width, proposal_width] + net_extra_layers + [
-                                         plan_intermediate_size],
-                                     dropout_p=dropout) + out_layers),
-        ),
+        normalize_inputs=False,
+        normalization_inputs=[],
+        model_inputs=ns.PRIOR_NAMES,
+        model_output=plan_name + "_dist",
+        preproc_fn=lambda inputs: inputs.leaf_filter_keys(ns.PRIOR_NAMES)
+        .leaf_apply(lambda arr: combine_after_dim(arr, 1)),  # # (B x D)
+        device=DEVICE,
+        network=SequentialParams(
+            build_mlp_param_list(ns.PRIOR_IN_SIZE,
+                                 [proposal_width, proposal_width, proposal_width] + net_extra_layers + [
+                                     plan_intermediate_size],
+                                 dropout_p=dropout) + out_layers),
     )
     return prior
 
@@ -172,32 +169,30 @@ def get_default_lmp_policy_params(ns, DEVICE, hidden_size, proposal_width,
     if not no_rnn_policy:
         policy = d(
             cls=LearnedInitRnnModel if learned_rnn_init else RnnModel,
-            params=d(
-                model_inputs=ns.POLICY_NAMES,
-                model_output="policy_raw",
-                preproc_fn=policy_preproc_fn,
-                device=DEVICE,
-                rnn_output_name="rnn_output_policy",
-                hidden_name="hidden_policy",
-                rnn_before_net=True,
-                # used only by LearnedInitRnnModel
-                init_network=SequentialParams(
-                    build_mlp_param_list(ns.POLICY_IN_SIZE, [hidden_size // 2, hidden_size, 2 * hidden_size],
-                                         dropout_p=dropout) + [
-                        LayerParams("split_dim", dim=-1, new_shape=[2, hidden_size]),  # (B x L x H)
-                    ]),
-                recurrent_network=LayerParams('gru', input_size=ns.POLICY_IN_SIZE,
-                                              hidden_size=hidden_size, num_layers=2,
-                                              bidirectional=False, batch_first=True, dropout=dropout),
-                # outputs (B x Seq x Hidden)
-                network=SequentialParams([
-                    LayerParams("linear", in_features=hidden_size,
-                                out_features=hidden_size, bias=True),  # outputs (B x Seq x A*nbins)
-                    LayerParams("relu"),
-                    LayerParams("linear", in_features=hidden_size, out_features=ns.policy_out_size, bias=True)
+            model_inputs=ns.POLICY_NAMES,
+            model_output="policy_raw",
+            preproc_fn=policy_preproc_fn,
+            device=DEVICE,
+            rnn_output_name="rnn_output_policy",
+            hidden_name="hidden_policy",
+            rnn_before_net=True,
+            # used only by LearnedInitRnnModel
+            init_network=SequentialParams(
+                build_mlp_param_list(ns.POLICY_IN_SIZE, [hidden_size // 2, hidden_size, 2 * hidden_size],
+                                     dropout_p=dropout) + [
+                    LayerParams("split_dim", dim=-1, new_shape=[2, hidden_size]),  # (B x L x H)
                 ]),
-                postproc_fn=policy_postproc_fn,
-            ),
+            recurrent_network=LayerParams('gru', input_size=ns.POLICY_IN_SIZE,
+                                          hidden_size=hidden_size, num_layers=2,
+                                          bidirectional=False, batch_first=True, dropout=dropout),
+            # outputs (B x Seq x Hidden)
+            network=SequentialParams([
+                LayerParams("linear", in_features=hidden_size,
+                            out_features=hidden_size, bias=True),  # outputs (B x Seq x A*nbins)
+                LayerParams("relu"),
+                LayerParams("linear", in_features=hidden_size, out_features=ns.policy_out_size, bias=True)
+            ]),
+            postproc_fn=policy_postproc_fn,
         )
 
         if use_policy_dist:
@@ -212,16 +207,14 @@ def get_default_lmp_policy_params(ns, DEVICE, hidden_size, proposal_width,
         assert not use_policy_dist, "Not implemented"
         policy = d(
             cls=BasicModel,
-            params=d(
-                model_inputs=ns.POLICY_NAMES,
-                model_output="policy_raw",
-                preproc_fn=policy_preproc_fn,
-                device=DEVICE,
-                # outputs (B x Seq x Hidden)
-                network=SequentialParams(
-                    build_mlp_param_list(ns.POLICY_IN_SIZE, [2 * proposal_width] * 3 + [ns.policy_out_size],
-                                         dropout_p=dropout)),
-                postproc_fn=policy_postproc_fn,
-            ),
+            model_inputs=ns.POLICY_NAMES,
+            model_output="policy_raw",
+            preproc_fn=policy_preproc_fn,
+            device=DEVICE,
+            # outputs (B x Seq x Hidden)
+            network=SequentialParams(
+                build_mlp_param_list(ns.POLICY_IN_SIZE, [2 * proposal_width] * 3 + [ns.policy_out_size],
+                                     dropout_p=dropout)),
+            postproc_fn=policy_postproc_fn,
         )
     return policy

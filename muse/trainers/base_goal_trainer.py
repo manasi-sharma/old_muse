@@ -11,13 +11,11 @@ from muse.experiments import logger
 
 from muse.metrics.metric import ExtractMetric
 from muse.metrics.tracker import BufferedTracker, Tracker
-from muse.utils.general_utils import is_next_cycle, listify
+from muse.utils.general_utils import is_next_cycle, listify, timeit
 from muse.utils.torch_utils import to_numpy, add_horizon_dim, torch_mappable, to_torch
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
-from muse.python_utils import timeit
-
 
 class BaseGoalTrainer:
 
@@ -131,7 +129,7 @@ class BaseGoalTrainer:
         for tracker_name, tracker in self._trackers.leaf_items():
             if not isinstance(tracker, Tracker):
                 assert isinstance(tracker, AttrDict), "Tracker must be passed in directly, or passed in as params."
-                self._trackers[tracker_name] = (tracker["cls")(tracker["params"]])
+                self._trackers[tracker_name] = (tracker["cls"])(tracker["params"])
                 assert isinstance(tracker, Tracker), tracker
 
         # make sure tracker frequencies and types are provided for all trackers.
@@ -247,7 +245,7 @@ class BaseGoalTrainer:
 
     def goal_step(self, model, datasets, obs, goal, env_memory: AttrDict, goal_policy, policy):
         # latest policy done, or first step.
-        if env_memory["goal_rollout_count" == 0 or (env_memory["policy_done"]])[-1].item():
+        if env_memory["goal_rollout_count"] == 0 or env_memory["policy_done"][-1].item():
             # the passed in goal is from reset, and this function computes additional goals using the goal policy
             # env_memory.policy_done[-1][:] = False
             env_memory.goal_count += 1

@@ -10,7 +10,8 @@ from attrdict import AttrDict as d
 from muse.utils.torch_utils import broadcast_dims, concatenate, combine_after_dim, to_torch
 
 
-def concat_goal_select_fn(pl_inputs: d, input_names, goal_state_names, cat_dim=1, allow_missing=False, prefix="goal_states"):
+def concat_goal_select_fn(pl_inputs: d, input_names, goal_state_names, cat_dim=1, allow_missing=False,
+                          prefix="goal_states"):
     # concats the state with the goal (only for goal_state_names)
     inps = pl_inputs > input_names  # (B x H x ...)
     H = inps.get_one().shape[1]
@@ -39,7 +40,8 @@ def cut_then_concat_goal_select_fn(pl_inputs: d, input_names, goal_state_names, 
     # cut from back
     if cut_last_h_steps is not None and cut_last_h_steps != 0:
         all_inps.leaf_assert(lambda arr: arr.shape[1] >= cut_last_h_steps)
-        all_inps.leaf_modify(lambda arr: arr[:, :-cut_last_h_steps] if cut_last_h_steps != 1 or arr.shape[1] > 1 else arr)
+        all_inps.leaf_modify(lambda arr:
+                             arr[:, :-cut_last_h_steps] if cut_last_h_steps != 1 or arr.shape[1] > 1 else arr)
     return all_inps & concat_goal_select_fn(all_inps, input_names, goal_state_names, cat_dim=cat_dim,
                                             allow_missing=allow_missing, prefix=prefix)
 
@@ -75,39 +77,32 @@ def get_play_lmp_selector_models(DEVICE, input_names, prior_goal_state_names, pr
         # goal/<goal_state_name> will have the goal
         goal_selector=d(
             cls=FunctionModel,
-            params=d(
-                device=DEVICE,
-                forward_fn=lambda model, inputs: (inputs > list(set(prior_goal_state_names + policy_goal_state_names)))
-                    .leaf_apply(lambda arr: broadcast_dims(arr[:, -1:], [1], [arr.shape[1]]))
-            ),
+            device=DEVICE,
+            forward_fn=lambda model, inputs: (inputs > list(set(prior_goal_state_names + policy_goal_state_names)))
+                .leaf_apply(lambda arr: broadcast_dims(arr[:, -1:], [1], [arr.shape[1]]))
         ),
         # posterior takes pl_inputs and stacks the state with the goal
         posterior_input_selector=d(
             cls=FunctionModel,
-            params=d(
-                device=DEVICE,
-                forward_fn=lambda model, pl_inputs: (pl_inputs > input_names) & (
-                        pl_inputs < ["goal_states", "padding_mask"])
-            ),
+            device=DEVICE,
+            forward_fn=lambda model, pl_inputs: (pl_inputs > input_names) & (
+                    pl_inputs < ["goal_states", "padding_mask"])
         ),
         # considers just t = 0 with the goal (hence cutting).
         prior_input_selector=d(
             cls=FunctionModel,
-            params=d(
-                device=DEVICE,
-                forward_fn=lambda model, pl_inputs: cut_then_concat_goal_select_fn(pl_inputs, prior_input_names,
-                                                                                   prior_goal_state_names,
-                                                                                   prior_cut_last_h_steps, prefix=prefix)
-            ),
+            device=DEVICE,
+            forward_fn=lambda model, pl_inputs: cut_then_concat_goal_select_fn(pl_inputs, prior_input_names,
+                                                                               prior_goal_state_names,
+                                                                               prior_cut_last_h_steps, prefix=prefix)
         ),
         policy_input_selector=d(
             cls=FunctionModel,
-            params=d(
-                device=DEVICE,
-                forward_fn=lambda model, pl_inputs: cut_then_concat_goal_select_fn(pl_inputs, policy_names,
-                                                                                   policy_goal_state_names,
-                                                                                   policy_cut_last_h_steps, prefix=prefix, cat_dim=-1)
-            ),
+            device=DEVICE,
+            forward_fn=lambda model, pl_inputs: cut_then_concat_goal_select_fn(pl_inputs, policy_names,
+                                                                               policy_goal_state_names,
+                                                                               policy_cut_last_h_steps,
+                                                                               prefix=prefix, cat_dim=-1)
         )
     )
 

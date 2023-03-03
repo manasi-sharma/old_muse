@@ -21,7 +21,7 @@ from muse.utils.param_utils import LayerParams, build_mlp_param_list, Sequential
     get_policy_dist_cap
 from muse.utils.general_utils import timeit
 
-from attrdict import AttrDict
+from attrdict import AttrDict as d
 from attrdict.utils import get_with_default, get_or_instantiate_cls
 
 class BaseGCBC(Model):
@@ -248,14 +248,12 @@ class BaseGCBC(Model):
 
         return d(
             cls=BasicModel,
-            params=d(
-                device=self.device,
-                model_inputs=self.image_keys,
-                model_output=self.encoder_out_name,
-                call_separate=not self.encoder_call_jointly,
-                use_shared_params=self.encoder_use_shared_params,
-                network=encoder_net,
-            )
+            device=self.device,
+            model_inputs=self.image_keys,
+            model_output=self.encoder_out_name,
+            call_separate=not self.encoder_call_jointly,
+            use_shared_params=self.encoder_use_shared_params,
+            network=encoder_net,
         )
 
     def _inner_model_params_to_attrs(self, params):
@@ -265,17 +263,15 @@ class BaseGCBC(Model):
         # some common parameters to use as a starting point
         return d(
             cls=self.inner_model_cls,
-            params=d(
-                device=self.device,
-                model_inputs=self.policy_in_names,
-                model_output=self.policy_raw_out_name,
-                preproc_fn=self.inner_preproc_fn,
-                postproc_fn=self.inner_postproc_fn,
-                normalize_inputs=len(self.inner_normalize_inputs) > 0,
-                normalization_inputs=self.inner_normalize_inputs,
-                save_normalization_inputs=self.inner_save_normalize_inputs,
-                default_normalize_sigma=self.default_normalize_sigma,
-            )
+            device=self.device,
+            model_inputs=self.policy_in_names,
+            model_output=self.policy_raw_out_name,
+            preproc_fn=self.inner_preproc_fn,
+            postproc_fn=self.inner_postproc_fn,
+            normalize_inputs=len(self.inner_normalize_inputs) > 0,
+            normalization_inputs=self.inner_normalize_inputs,
+            save_normalization_inputs=self.inner_save_normalize_inputs,
+            default_normalize_sigma=self.default_normalize_sigma,
         )
 
     @abc.abstractmethod
@@ -418,9 +414,7 @@ class MLP_GCBC(BaseGCBC):
 
         return d(
             cls=BasicModel,
-            params=d(
-                network=self.mlp_network
-            )
+            network=self.mlp_network
         )
 
 
@@ -454,18 +448,16 @@ class RNN_GCBC(BaseGCBC):
 
         return d(
             cls=RnnModel,
-            params=d(
-                rnn_output_name="rnn_output_policy",
-                hidden_name="hidden_policy",
-                rnn_before_net=True,
-                tuple_hidden=self.rnn_type == "lstm",
-                recurrent_network=LayerParams(self.rnn_type, input_size=self.policy_in_size,
-                                              hidden_size=self.hidden_size, num_layers=self.rnn_depth,
-                                              bidirectional=False, batch_first=True,
-                                              dropout=self.dropout_p),
-                # outputs (B x Seq x Hidden)
-                network=self.mlp_after_rnn_network,
-            )
+            rnn_output_name="rnn_output_policy",
+            hidden_name="hidden_policy",
+            rnn_before_net=True,
+            tuple_hidden=self.rnn_type == "lstm",
+            recurrent_network=LayerParams(self.rnn_type, input_size=self.policy_in_size,
+                                          hidden_size=self.hidden_size, num_layers=self.rnn_depth,
+                                          bidirectional=False, batch_first=True,
+                                          dropout=self.dropout_p),
+            # outputs (B x Seq x Hidden)
+            network=self.mlp_after_rnn_network,
         )
 
     @classmethod
@@ -536,12 +528,10 @@ class TransformerGCBC(BaseGCBC):
 
         return d(
             cls=SequenceModel,
-            params=d(
-                horizon=self.horizon,
-                # we will pass in the encoder out name online as an additional input to aggregate.
-                online_inputs=self.state_names + self.goal_names + self.online_input_names,
-                network=self.transformer_net
-            )
+            horizon=self.horizon,
+            # we will pass in the encoder out name online as an additional input to aggregate.
+            online_inputs=self.state_names + self.goal_names + self.online_input_names,
+            network=self.transformer_net
         )
 
     @classmethod

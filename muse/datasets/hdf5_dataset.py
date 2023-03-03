@@ -3,12 +3,14 @@ import math
 import h5py
 import numpy as np
 import torch
+from attrdict import AttrDict
 from attrdict.utils import get_with_default
+from tqdm import tqdm
 
 from muse.datasets.dataset import Dataset
 from muse.experiments import logger
-from muse.utils.python_utils import AttrDict
-from muse.utils.torch_utils import broadcast_dims_np
+from muse.utils.general_utils import timeit
+from muse.utils.torch_utils import broadcast_dims_np, pad_dims, split_dim_np
 
 
 class Hdf5Dataset(Dataset):
@@ -43,7 +45,7 @@ class Hdf5Dataset(Dataset):
         self._ep_prefix = get_with_default(params, 'ep_prefix', "demo_")
         self._pad_end_sequence = get_with_default(params, "pad_end_sequence", True)
 
-        self._cache = get_with_default(params, "cache", False)
+        self._cache = get_with_default(params, "cache", True)
 
         # will use base_dataset to get the whole datadict.
         self._load_from_base = get_with_default(params, "load_from_base", False)
@@ -58,6 +60,8 @@ class Hdf5Dataset(Dataset):
 
         # TODO: effective horizon for skipping elements
         self.effective_horizon = self.horizon
+
+        self._batch_names_to_get = get_with_default(params, "batch_names_to_get", self._env_spec.all_names)
 
     def _get_load_range(self):
         # keeping only some range of the dataset
@@ -77,12 +81,19 @@ class Hdf5Dataset(Dataset):
             logger.debug("Loading from base dataset...")
             # if loading from base,
             assert isinstance(self._base_dataset, self.__class__), "Base dataset is not the right class!"
-            low, high = self._get_load_range()
-            self._pointers = self._base_dataset._pointers[low:high]
-            self._dones = self._base_dataset._dones[low:high]
-            self._rollout_timesteps = self._rollout_timesteps[low:high]
-            self._ep_lens = self._ep_lens[low:high]
-            self._data_len = sum(self._ep_lens)
+
+            self._pointers = self._base_dataset._pointers
+            self._dones = self._base_dataset._dones
+            self._rollout_timesteps = self._rollout_timesteps
+            self._ep_lens = self._ep_lens
+
+        # parse a range of the dataset
+        low, high = self._get_load_range()
+        self._pointers = self._pointers[low: high]
+        self._dones = self._dones[low: high]
+        self._rollout_timesteps = self._rollout_timesteps[low: high]
+        self._ep_lens = self._ep_lens[low: high]
+        self._data_len = sum(self._ep_lens)
 
         # per episode, where does it start, how long is it, and where is the last position we can start.
         self.ep_starts = np.concatenate([[0], self._ep_lens[:-1]])
@@ -96,9 +107,27 @@ class Hdf5Dataset(Dataset):
         self.last_startable = np.maximum(
             self.ep_lengths - 1 - int(not self._pad_end_sequence) * self.effective_horizon, 0)
 
-        self._cached_dicts = {}
+        # self._cached_dicts = {}
 
         self._data_setup()
+
+        self.temporary_names = []
+
+        if self._cache:
+            logger.debug("Caching all episodes...")
+
+            self._cache_ins = []
+            self._cache_outs = []
+            for i in tqdm(range(int(math.ceil(self._num_valid_samples / self.batch_size)))):
+                start, end = i*self.batch_size, min((i + 1)*self.batch_size, self._num_valid_samples)
+                ins, outs = self.get_batch(np.arange(start, end), local_batch_size=end - start, cache=False)
+                self._cache_ins.append(ins)
+                self._cache_outs.append(outs)
+
+            self._cache_ins = AttrDict.leaf_combine_and_apply(self._cache_ins, np.concatenate)
+            self._cache_outs = AttrDict.leaf_combine_and_apply(self._cache_outs, np.concatenate)
+
+            logger.debug("Done caching.")
 
     def _data_setup(self):
         # static sampling likelihoods
@@ -121,27 +150,6 @@ class Hdf5Dataset(Dataset):
             self._period_lengths) > 1 else [0]
         self._seq_idx_to_true_idx = np.concatenate(
             [ps + np.arange(l) for l, ps in zip(self._sampling_period_lengths, period_starts)])
-
-    # getting the indices for a chunk from episode i (human ordering)
-    def batch_sample_indices_within_episode(self, indices):
-        relevant_ep_lengths = self._ep_lens[indices]
-        relevant_ep_last_starts = self.last_startable[indices]
-        random_start_offset = np.random.randint(0, relevant_ep_last_starts + 1)
-
-        # start = relevant_ep_starts + random_start_offset
-        # horizon forward (B x H) -> list of BxH, make sure they don't go outside ep boundary
-        within_ep_idxs = random_start_offset[:, None] + np.arange(self.horizon)[None] * 1
-
-        # if self._allow_padding and np.any(relevant_ep_lengths < self.horizon):
-        #     raise NotImplementedError("need to implement padding the sequences")
-
-        bounded_ep_idxs = np.minimum(within_ep_idxs, (relevant_ep_lengths - 1)[:, None])
-        indices = bounded_ep_idxs
-
-        # how long each sample really is
-        chunk_lengths = np.minimum(relevant_ep_lengths, self.effective_horizon)
-
-        return indices.reshape(-1), chunk_lengths
 
     def _get_hdf5_leaf_names(self, node, name=''):
         if isinstance(node, h5py.Dataset):
@@ -170,6 +178,17 @@ class Hdf5Dataset(Dataset):
 
         return out_nodes
 
+    @staticmethod
+    def parse_hdf5(key, value):
+        new_value = np.array(value)
+        #     if type(new_value[0]) == np.bytes_:
+        #         new_value = np_utils.bytes2im(new_value)
+        if new_value.dtype == np.float64:
+            new_value = new_value.astype(np.float32)
+        if len(new_value.shape) == 1:
+            new_value = new_value[:, np.newaxis]
+        return new_value
+
     def _load_hdf5s(self):
         self._input_files = [self._input_files] if isinstance(self._input_files, str) else self._input_files
 
@@ -190,27 +209,30 @@ class Hdf5Dataset(Dataset):
             all_hdf5_names = self._get_hdf5_leaf_names(f)
 
             # option to load multiple episodes, prefixed by {ep_prefix}
-            if self._ep_prefix and any(n.startswith(self._ep_prefix) for n in all_hdf5_names):
+            if self._ep_prefix and any(n.startswith(self._prefix + self._ep_prefix) for n in all_hdf5_names):
                 nodes = self._load_multi_episode_hdf5(f, self._prefix, self._ep_prefix)
             else:
                 nodes = [f]
 
+            hdf5_step_names = [s for s in self._step_names if s not in ['done', 'rollout_timestep']]
+
             # now check that all episodes are included, and filter the relevant keys, and compute sizes
             for i, ep in enumerate(nodes):
                 hdf5_names = self._get_hdf5_leaf_names(ep)
+                hdf5_names_no_root = [h[1:] for h in hdf5_names]
                 # make sure all names are present
                 for name in self._env_spec.names:
-                    assert name in hdf5_names, f"Episode {i} from file={hdf5_fname} missing name {name}!"
+                    assert name in hdf5_names_no_root, f"Episode {i} from file={hdf5_fname} missing name {name}!"
 
                 # make sure lengths match (or lengths are 1) between all keys for this ep
                 hdf5_lens = np.array([len(ep[name]) for name in self._env_spec.names])
-                ep_len = max(hdf5_lens[0])
+                ep_len = max(hdf5_lens)
 
                 for key in self._onetime_names:
                     assert len(ep[key]) in [1, ep_len], \
                         f"Key {key} must have length 1 or {ep_len}, but was {len(ep[key])}"
 
-                for key in self._step_names:
+                for key in hdf5_step_names:
                     assert len(ep[key]) == ep_len, \
                         f"Key {key} must have length {ep_len}, but was {len(ep[key])}"
 
@@ -219,8 +241,10 @@ class Hdf5Dataset(Dataset):
                     continue
 
                 # add optional keys to node for later loading
-                dones.append(ep['done'] if 'done' in ep else ([False] * (ep_len - 1) + [True]))
-                rollout_timesteps.append(ep['rollout_timestep'] if 'rollout_timestep' in ep else np.arange(ep_len))
+                dones.append(self.parse_hdf5(self._done_key, ep[self._done_key])
+                             if self._done_key in ep else ([False] * (ep_len - 1) + [True]))
+                rollout_timesteps.append(self.parse_hdf5('rollout_timestep', ep['rollout_timestep'])
+                                         if 'rollout_timestep' in ep else np.arange(ep_len))
                 data_len += ep_len
                 ep_lens.append(ep_len)
 
@@ -230,27 +254,36 @@ class Hdf5Dataset(Dataset):
 
         return pointers, dones, rollout_timesteps, ep_lens, data_len
 
-    def get_episode(self, i, names, split=True, torch_device=None, **kwargs):
-
-        if i in self._cached_dicts:
-            return self._cached_dicts[i]
-
+    def get_episode(self, i, names, split=True, torch_device=None, indices=None, pad_horizon=False, **kwargs):
         # load ep if not already loaded
+        if indices is None:
+            indices = slice(None)
+
         new_dc = AttrDict()
         for n in names:
-            arr = self._pointers[i][n]
-            # truncate onetime names and broadcast
-            if n in self._onetime_names:
-                if n in self._env_spec.final_names:
-                    arr = arr[-1:]
-                else:
-                    arr = arr[:1]
-                # match ep len shape
-                arr = broadcast_dims_np(arr, [0], [self.ep_lengths[i]])
-            new_dc[n].append(arr)
 
-        if self._cache:
-            self._cached_dicts[i] = new_dc
+            with timeit('get_episode/access'):
+                # TODO case for temp names
+                if n == self._done_key:
+                    arr = self._dones[i][indices]
+                elif self._use_rollout_steps and n == 'rollout_timestep':
+                    arr = self._rollout_timesteps[i][indices]
+                else:
+                    arr = self.parse_hdf5(n, self._pointers[i][n][indices])
+
+            with timeit('get_episode/after'):
+                if pad_horizon and arr.shape[0] < self.horizon:
+                    arr = np.pad(arr, ((0, self.horizon - arr.shape[0]), (0, 0)), mode='edge')
+
+                # truncate onetime names and broadcast
+                if n in self._onetime_names:
+                    if n in self._env_spec.final_names:
+                        arr = arr[-1:]
+                    else:
+                        arr = arr[:1]
+                    # match ep len shape
+                    arr = broadcast_dims_np(arr, [0], [self.ep_lengths[i]])
+                new_dc[n] = arr
 
         if split:
             all_ds = self.split_into_inout(new_dc)
@@ -266,18 +299,22 @@ class Hdf5Dataset(Dataset):
 
         return all_ds[0] if len(all_ds) == 1 else tuple(all_ds)
 
-    def load_episodes(self, episodes, names):
+    def load_batches(self, episodes, slices, names, use_unique=True):
+        if use_unique:
+            assert slices is None, "Not Implemented slicing and unique eps"
+            unique = np.unique(episodes)
+            # N x U
+            idxs = np.argmax(episodes[:, None] == unique[None], axis=-1)
+            unique_dc = [self.get_episode(ep, names, split=False) for ep in unique]
+            return [unique_dc[i] for i in idxs]
+        else:
+            return [self.get_episode(ep, names, indices=slices[i], pad_horizon=True, split=False) for i, ep in enumerate(episodes)]
 
-        unique, idxs = np.unique(episodes, return_index=True)
-
-        # load the arrays from scratch if we are not scratching
-
-        unique_dcs = [self.get_episode(ep, names, split=False) for ep in unique]
-        return [unique_dcs[i] for i in idxs]
-
-    def get_batch(self, indices=None, names=None, torch_device=None, min_idx=0, max_idx=0, local_batch_size=None, **kwargs):
+    def get_batch(self, indices=None, names=None, torch_device=None, min_idx=0, max_idx=0, local_batch_size=None, cache=True, **kwargs):
         if names is None:
-            names = self._env_spec.all_names
+            names = self._batch_names_to_get + [self._done_key] + \
+                       (["rollout_timestep"] if self._use_rollout_steps else []) + \
+                       self.temporary_names
 
         local_batch_size = self.batch_size if local_batch_size is None else local_batch_size
 
@@ -288,30 +325,43 @@ class Hdf5Dataset(Dataset):
         # now indices will refer to the indexable **sample sequences** not the episodes.
         if indices is None:
             # equally ranked sequences
+            # NOTE: this is slow, you should use dataset.sampler instead to generate indices
             indices = np.random.choice(max_idx - min_idx, local_batch_size, replace=max_idx - min_idx < local_batch_size)
         else:
             assert len(indices) == local_batch_size, [local_batch_size, len(indices), indices]
 
         indices = self.idx_map_to_real_idx(indices)
 
-        # get the episodes from file (or cached)
-        episode_indices = self._seq_idx_to_ep_idx[indices]
-        relevant_eps = self.load_episodes(episode_indices, names)
+        with timeit('get_batch/index'):
+            if self._cache and cache:
+                inputs = self._cache_ins.leaf_apply(lambda arr: arr[indices])
+                outputs = self._cache_outs.leaf_apply(lambda arr: arr[indices])
+            else:
+                episode_indices = self._seq_idx_to_ep_idx[indices]
+                # produce B x H indices, within each episode, and clip to not overflow past ep end.
+                ep_lens = self.ep_lengths[episode_indices]
+                # get the start index within the batch of episodes (since we load the whole ep)
+                ep_starts = np.cumsum(np.concatenate([[0], ep_lens[:-1]]))
+                range_start = self._seq_idx_to_start_in_ep_idx[indices] + ep_starts
+                # range_end = np.minimum(range_start + self.horizon, ep_lens)
+                max_ep_indices = ep_starts + ep_lens - 1
+                indices = np.minimum(range_start[:, None] + np.arange(self._horizon)[None], max_ep_indices[:, None])
+                # slices = [slice(rs, re) for rs, re in zip(range_start, range_end)]
 
-        # get the (B*H) indices we will load
-        true_indices, _ = self.batch_sample_indices_within_episode(indices)
-        true_indices = true_indices.reshape(len(indices), self.horizon)
+                dcs = self.load_batches(episode_indices, None, names)
+                cat_dcs = AttrDict.leaf_combine_and_apply(dcs, np.concatenate)
 
-        dcs = []
-        for ep_dc, seq in zip(relevant_eps, true_indices):
-            # get the indices within each episode
-            dcs.append(ep_dc.leaf_apply(lambda arr: arr[seq]))
+                # index
+                flat_indices = indices.reshape(-1)
+                # each is (B x H x ...)
+                batch = cat_dcs.leaf_apply(lambda arr: split_dim_np(arr[flat_indices], 0, list(indices.shape)))
 
-        inputs, outputs = self.split_into_inout(AttrDict.leaf_combine_and_apply(dcs, np.concatenate))
+                inputs, outputs = self.split_into_inout(batch)
 
-        if torch_device is not None:
-            for d in (inputs, outputs):
-                d.leaf_modify(lambda x: torch.from_numpy(x).to(device=torch_device))
+        with timeit('get_batch/to_torch'):
+            if torch_device is not None:
+                for d in (inputs, outputs):
+                    d.leaf_modify(lambda x: torch.from_numpy(x).to(device=torch_device))
 
         return inputs, outputs
 
@@ -367,8 +417,10 @@ class Hdf5Dataset(Dataset):
         return out
 
     def get_num_episodes(self):
-        return len(self.ep_lengths)
+        return len(self._ep_lens)
 
     def episode_length(self, i):
         return self.ep_lengths[i]
 
+    def period_length(self, i):
+        return self.episode_length(i)

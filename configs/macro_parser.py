@@ -14,11 +14,12 @@ class MacroEnabledArgumentParser(argparse.ArgumentParser):
     def __init__(self,
                  macros: Dict[str, str] = current_macros.macros,
                  macro_prefix: str = '^',
+                 allow_abbrev=False,
                  **kwargs):
         self._macros = macros
         self._macro_prefix = macro_prefix
         assert len(self._macro_prefix) > 0 or self._macros is None
-        super(MacroEnabledArgumentParser, self).__init__(**kwargs)
+        super(MacroEnabledArgumentParser, self).__init__(allow_abbrev=allow_abbrev, **kwargs)
 
         if self.fromfile_prefix_chars is not None:
             assert self._macro_prefix not in self.fromfile_prefix_chars, [self._macro_prefix,
