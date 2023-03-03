@@ -469,6 +469,7 @@ class BaseGoalTrainer:
             env_memory.rollout_count = 0  # first env step in rollout.
             env_memory.goal_count = 0  # number of goal action calls.
             # records the true history
+            env_memory.true_history = AttrDict()
             env_memory.true_history.obs = [expanded_obs]
             env_memory.true_history.acs = []
             env_memory.true_history.goal = []
@@ -476,6 +477,7 @@ class BaseGoalTrainer:
         env_memory.goal_rollout_count = 0  # first env step since last goal reset
 
         # records what we should store in dataset
+        env_memory.history = AttrDict()
         env_memory.history.obs = [expanded_obs]
         env_memory.history.acs = []  # there is one less action than obs
         env_memory.history.goal = []

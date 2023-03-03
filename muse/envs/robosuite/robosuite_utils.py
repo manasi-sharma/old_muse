@@ -122,7 +122,7 @@ def rs_generic_online_action_postproc_fn(model, obs, out, policy_out_names, no_o
         policy_out_norm_names = policy_out_names
 
     if wp_dyn is None:
-        wp_dyn = get_wp_dynamics_fn(no_ori=no_ori, fast_dynamics=fast_dynamics, **kwargs)
+        wp_dyn = get_wp_dynamics_fn(no_ori=no_ori, fast_dynamics=fast_dynamics)
 
     unnorm_out = model.normalize_by_statistics(out, policy_out_norm_names, inverse=True) > policy_out_names
     # import ipdb; ipdb.set_trace()
