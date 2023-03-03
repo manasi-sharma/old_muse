@@ -4,7 +4,8 @@ from typing import List
 from muse.datasets.dataset import Dataset
 from muse.experiments import logger
 from muse.models.model import Model
-from muse.utils.python_utils import AttrDict as d, get_required, get_with_default
+from attrdict import AttrDict as d
+from attrdict.utils import get_with_default
 
 
 class Optimizer(object):
@@ -39,7 +40,7 @@ class SingleOptimizer(Optimizer):
 
     def _init_params_to_attrs(self, params: d):
         super(SingleOptimizer, self)._init_params_to_attrs(params)
-        self._get_base_optimizer = get_required(params, "get_base_optimizer")
+        self._get_base_optimizer = params["get_base_optimizer"]
         if "get_base_scheduler" in params.leaf_keys():
             logger.debug("SingleOptimizer using scheduler..")
             self._get_base_scheduler = params.get_base_scheduler
@@ -83,8 +84,8 @@ class MultiOptimizer(Optimizer):
 
     def _init_params_to_attrs(self, params: d):
         super(MultiOptimizer, self)._init_params_to_attrs(params)
-        self._num_optimizers = get_required(params, "num_optimizers")
-        self._get_optimizer = get_required(params, "get_optimizer")
+        self._num_optimizers = params["num_optimizers"]
+        self._get_optimizer = params["get_optimizer"]
         self._loss_names = get_with_default(params, "loss_names", None)  # if None, all optimizers use the same loss, which gets passed in.
 
         # loss names are used to parse the loss dict (input).
