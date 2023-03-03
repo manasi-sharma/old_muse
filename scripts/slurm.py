@@ -27,7 +27,7 @@ from argparse import ArgumentParser
 from muse.experiments import logger
 from muse.utils.slurm_utils import SLURM_ARGS, write_slurm_header, SLURM_CFGS, update_parser_with_cfg
 
-BASE_CONDA_ENV = "sbrl"
+BASE_CONDA_ENV = "muse"
 DELIM = "---"
 SWEEP_DELIM_START = "[[["
 SWEEP_DELIM_END = "]]]"
