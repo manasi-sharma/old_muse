@@ -1,4 +1,3 @@
-import argparse
 import sys
 
 from attrdict import AttrDict

@@ -69,6 +69,7 @@ class Dataset(abstract.BaseClass, Sized, TD.IterableDataset):
 
         self._done_key = get_with_default(params, "done_key", "done", map_fn=str)
         self._use_rollout_steps = get_with_default(params, "use_rollout_steps", True)
+
         self._step_names = get_with_default(params, "step_names", self._env_spec.names)
         self._onetime_names = get_with_default(params, "onetime_names",
                                                self._env_spec.param_names + self._env_spec.final_names)

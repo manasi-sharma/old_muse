@@ -41,17 +41,17 @@ See here for greater detail about working with AttrDicts: https://github.com/Sta
 
 ### muse.datasets
 Datasets implement various storage and reading mechanisms. 
-`muse.datasets.NpDataset` is the one used for most things, and other types of datasets are built on top of this (e.g., see `muse.datasets.TorchDataset`).
-Some datasets haven't been implemented (like `muse.datasets.Hdf5Dataset`).
+`muse.datasets.NpDataset` is the one used for most things. `muse.datasets.Hdf5Dataset` is implemented and tested but should rarely be used, since it is often slower (without in-memory caching).
 
 Some methods of note:
 - `get_batch(indices, ...)`: Gets a batch of data as two AttrDicts: inputs, outputs.
+- `get_episode(i, ...)`: Gets a full episode of data as either two AttrDicts (inputs, outputs) or one (datadict).
 - `add_episode(inputs, outputs, ...)`: Adds data as an episode of inputs and outputs (both are AttrDicts).
 - `add(input, output, ...)`: Adds a single input / output to the dataset (still AttrDicts).
 - `__len__`: Size of the dataset.
 
 ### muse.envs
-Environments are very similar to that in OpenAI's `gym` format. They use a shared asset folder `muse/envs/assets/` which should have been downloaded in installation.
+Environments are very similar to that in OpenAI's `gym` format. They use a shared asset folder `assets/` which should have been downloaded in installation.
 These environments implement, for example:
 - `step(action: AttrDict, ...) -> obs, goal, done`: Similar to gym, but everything is an AttrDict, except done which is a 1 element bool array.
 - `reset(presets: AttrDict) -> obs, goal`: Like gym, but enables presets to constrain the resetting.
@@ -78,4 +78,37 @@ The policy config will be responsible for providing the right `policy_model_forw
 Trainers compose all the above modules into a training algorithm, involving optimizers, model losses, saving checkpoints, and optionally also involving stepping some environment.
 The most used classes are `muse.trainers.Trainer` and `muse.sandbox.new_trainer.goal_trainer.GoalTrainer`.
 
+### configs
+In order to set up experiments, we have a python-based configuration format, which resembles more common yaml-based configurations but allows for pythonic language in configurations, including functions, expressions, and dependent parameters.
+For more information on how to set up and work with configs, see `configs/README.md`.
+
 ---
+
+## Scripts
+
+Scripts in `muse` follow a similar format, here are the basic ones that one might regularly use:
+- `scripts/train.py`: Train a model (used primarily for offline training without environment interaction)
+- `scripts/goal_train.py`: Train a model with a policy and a goal policy (used primarily when online rollouts are needed to evaluate different checkpoints during training)
+- `scripts/resolve.py`: Resolve the configuration module, and print out the resulting parameters
+- `scripts/tests/load_batches.py`: Load a dataset module and load batches while timing things, as a way to debug dataset loading.
+- `scripts/eval.py`: Evaluate a model and policy in an environment.
+- - `scripts/collect.py`: Evaluate a model and policy in an environment, and also save it to dataset.
+
+Each of these starts with a similar header:
+```python
+from configs.helpers import load_base_config, get_script_parser
+parser = get_script_parser()
+parser.add_argument('config', type=str, help="common params for all modules.")
+# <other parser argument declarations for the given script>
+# ...
+
+# parse the local command line arguments
+local_args, unknown = parser.parse_known_args()
+
+# load the config tree with command line arguments that were not locally recognized
+params, root = load_base_config(local_args.config, unknown)
+
+# load the experiment name from the config root node.
+exp_name = root.get_exp_name()
+```
+

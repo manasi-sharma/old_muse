@@ -23,7 +23,7 @@ class EnvSpec(Spec):
 
         Returns
         -------
-        list: str
+        list: List[str]
         """
         raise NotImplementedError
 
@@ -38,7 +38,7 @@ class EnvSpec(Spec):
 
         Returns
         -------
-        list: str
+        list: List[str]
         """
         return []
 
@@ -49,7 +49,7 @@ class EnvSpec(Spec):
 
         Returns
         -------
-        list: str
+        list: List[str]
         """
         return []
 
@@ -60,7 +60,7 @@ class EnvSpec(Spec):
 
         Returns
         -------
-        list: str
+        list: List[str]
         """
         return []
 
@@ -71,7 +71,7 @@ class EnvSpec(Spec):
 
         Returns
         -------
-        list: str
+        list: List[str]
         """
         return []
 
@@ -80,7 +80,7 @@ class EnvSpec(Spec):
         """
         Returns
         -------
-        list: str
+        list: List[str]
         """
         raise NotImplementedError
 
@@ -91,7 +91,7 @@ class EnvSpec(Spec):
 
         Returns
         -------
-        list: str
+        list: List[str]
         """
         return self.observation_names + self.goal_names + self.action_names + self.output_observation_names \
             + self.output_goal_names
@@ -103,6 +103,28 @@ class EnvSpec(Spec):
 
         Returns
         -------
-        list: str
+        list: List[str]
         """
         return self.names + self.param_names + self.final_names
+
+    @property
+    def input_names(self):
+        """
+        Names that are "inputs"
+
+        Returns
+        -------
+        list: List[str]
+        """
+        return self.observation_names + self.goal_names + self.action_names + self.param_names
+
+    @property
+    def output_names(self):
+        """
+        Names that are "outputs"
+
+        Returns
+        -------
+        list: List[str]
+        """
+        return self.output_observation_names + self.output_goal_names + self.final_names

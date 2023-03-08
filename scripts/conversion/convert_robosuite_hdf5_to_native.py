@@ -9,7 +9,8 @@ import h5py
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from muse.envs.robosuite.robosuite_env import RobosuiteEnv, modify_spec_prms
+from muse.envs.robosuite.robosuite_env import RobosuiteEnv
+from muse.envs.robosuite.robosuite_utils import modify_spec_prms
 from muse.experiments import logger
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default

@@ -66,8 +66,7 @@ class GoalTrainer(BaseGoalTrainer):
         if isinstance(self.data_augmentation_params, DataAugmentation):
             self.data_augmentation: DataAugmentation = self.data_augmentation_params  # allow passing in data aug
         elif not self.data_augmentation_params.is_empty():
-            self.data_augmentation: DataAugmentation = get_cls_param_instance(self.data_augmentation_params,
-                                                                              "cls", "params", DataAugmentation)
+            self.data_augmentation: DataAugmentation = get_cls_param_instance(self.data_augmentation_params, "cls", None, DataAugmentation)
             if len(self._datasets_train) == 1:
                 self.data_augmentation.link_dataset(self._datasets_train[0])
         else:

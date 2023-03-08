@@ -92,7 +92,7 @@ class RobosuiteEnv(Env):
         # logger.debug(f"Env config:\n{(json.dumps(env_kwargs, indent=4, sort_keys=True))}")
         if self._env_name == 'KitchenEnv':
             # loads the environments for zoo.
-            import robosuite_task_zoo
+            pass
         self._base_env = EnvRobosuite(self._env_name,
                                       render=self._render,
                                       render_offscreen=self._imgs,
@@ -368,52 +368,6 @@ class RobosuiteEnv(Env):
             prms.observation_names.append('ego_image')
 
         return prms
-
-
-def modify_spec_prms(prms, no_names=False, raw=False, minimal=False, no_reward=False, no_object=False,
-                     include_click_state=False, include_mode=False,
-                     include_real=False, include_target_names=False, include_target_gripper=False,
-                     include_policy_actions=True):
-    if no_names:
-        prms.action_names.remove('policy_name')
-
-    # the raw data doesn't contain euler angle keys
-    if raw:
-        prms.observation_names.remove('robot0_eef_eul')
-
-    if minimal:
-        allowed = ["robot0_eef_pos", "robot0_eef_quat", "robot0_gripper_qpos", "object"]
-        prms.observation_names = allowed
-        prms.action_names = ['action']
-        if include_policy_actions:
-            prms.action_names.extend(["policy_type", "policy_name", "policy_switch"])
-    elif not include_policy_actions:
-        prms.action_names.remove("policy_type")
-        prms.action_names.remove("policy_name")
-        prms.action_names.remove("policy_switch")
-
-    if no_reward:
-        prms.output_observation_names.remove('reward')
-
-    if no_object and 'object' in prms.observation_names:
-        prms.observation_names.remove("object")
-
-    if include_click_state:
-        prms.action_names.append('click_state')
-
-    if include_mode:
-        prms.observation_names.append('mode')
-
-    if include_real:
-        prms.observation_names.append('real')
-
-    if include_target_names:
-        prms.action_names.extend(['target/position', 'target/orientation', 'target/orientation_eul'])
-
-    if include_target_gripper:
-        prms.action_names.extend(['target/gripper'])
-
-    return prms
 
 
 override_reward_fns = {

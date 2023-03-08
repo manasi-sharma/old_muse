@@ -22,7 +22,8 @@ from muse.utils.torch_utils import to_numpy, to_torch
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default, get_cls_param_instance
-from muse.python_utils import timeit
+from muse.utils.general_utils import timeit
+
 
 class Trainer(object):
 

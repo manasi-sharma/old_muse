@@ -3,6 +3,8 @@ from muse.utils.loss_utils import get_default_mae_action_loss_fn
 from attrdict import AttrDict as d
 
 export = d(
+    exp_name='_hydra{?use_smooth_mode:_sm}_gma{gamma}_mb{mode_beta}_'
+             '{rnn_type}-hs{hidden_size}-sms{sparse_mlp_size}-ps{policy_size}',
     cls=RNN_DAS_GCBC,
     use_goal=False,
     use_final_goal=False,

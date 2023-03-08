@@ -4,8 +4,6 @@ from cfgs.dataset import np_seq
 from cfgs.env import square
 from cfgs.model import bc_rnn
 
-# from configs.exp_hvs.rm_utils import Robot3DLearningUtils
-
 from cfgs.trainer import rm_goal_trainer
 from configs.fields import Field as F
 from muse.envs.robosuite.robosuite_env import RobosuiteEnv
@@ -27,6 +25,7 @@ export = d(
 
     # sequential dataset modifications (adding input file)
     dataset_train=np_seq.export & d(
+        load_episode_range=[0.0, 0.9],
         horizon=F('horizon'),
         batch_size=F('batch_size'),
         file=F('dataset', lambda x: f'data/hvsBlock3D/{x}.npz'),

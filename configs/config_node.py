@@ -335,6 +335,8 @@ class ConfigNode:
             return self.params.leaf_copy()
 
         gparams = self.parent.global_params.leaf_copy()
+        if self.full_name not in gparams:
+            gparams[self.full_name] = d()
         gparams[self.full_name] &= self.params
 
         return gparams

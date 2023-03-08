@@ -1,4 +1,5 @@
 import numpy as np
+from attrdict.utils import get_with_default
 
 from muse.experiments import logger
 from muse.trainers.base_goal_trainer import BaseGoalTrainer

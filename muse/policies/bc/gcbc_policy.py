@@ -34,6 +34,29 @@ class GCBCPolicy(MemoryPolicy):
         super()._init_setup()
         self.model_forward_fn = None
 
+    def postproc_action(self, model, obs, out, memory, vel_act, **kwargs):
+
+        # postprocessing of action (e.g. target action)
+        self.online_action_postproc_fn(model, obs, out, self._policy_out_names,
+                                       relative=False, vel_act=vel_act, memory=memory,
+                                       max_gripper_vel=self.max_gripper_vel,  # 1000 if real else 150.
+                                       policy_out_norm_names=self._policy_out_norm_names,
+                                       max_orn_vel=self.max_orn_vel,  # 5. if "drawer" in obs.keys() else 10.
+                                       free_orientation=self.free_orientation,
+                                       **kwargs)
+
+        # adding in extra info
+        if self.fill_extra_policy_names:
+            shp = list((out >> self._policy_out_names[0]).shape[:1])
+            if not out.has_leaf_key("policy_type"):
+                out['policy_type'] = np.broadcast_to([253], shp + [1])
+            if not out.has_leaf_key("policy_name"):
+                out['policy_name'] = np.broadcast_to(["lmp_policy"], shp + [1])
+            if not out.has_leaf_key("policy_switch"):
+                out['policy_switch'] = np.broadcast_to([False], shp + [1])
+
+        return out
+
     # policy first rolls out model, then postprocess action(s) as defined by utils
     def default_mem_policy_model_forward_fn(self, model, obs: d, goal: d, memory: d, known_sequence=None, **kwargs):
 
@@ -56,23 +79,4 @@ class GCBCPolicy(MemoryPolicy):
         else:
             vel_act = (out >> self.mode_key).item() > 0.5  # mode is 1 for velact, 0 for posact.
 
-        # postprocessing of action (e.g. target action)
-        self.online_action_postproc_fn(model, obs, out, self._policy_out_names,
-                                       relative=False, vel_act=vel_act, memory=memory,
-                                       max_gripper_vel=self.max_gripper_vel,  # 1000 if real else 150.
-                                       policy_out_norm_names=self._policy_out_norm_names,
-                                       max_orn_vel=self.max_orn_vel,  # 5. if "drawer" in obs.keys() else 10.
-                                       free_orientation=self.free_orientation,
-                                       **kwargs)
-
-        # adding in extra info
-        if self.fill_extra_policy_names:
-            shp = list((out >> self._policy_out_names[0]).shape[:1])
-            if not out.has_leaf_key("policy_type"):
-                out['policy_type'] = np.broadcast_to([253], shp + [1])
-            if not out.has_leaf_key("policy_name"):
-                out['policy_name'] = np.broadcast_to(["lmp_policy"], shp + [1])
-            if not out.has_leaf_key("policy_switch"):
-                out['policy_switch'] = np.broadcast_to([False], shp + [1])
-
-        return out
+        return self.postproc_action(model, obs, out, memory, vel_act, **kwargs)

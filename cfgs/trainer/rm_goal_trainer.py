@@ -6,8 +6,6 @@ from muse.trainers.optimizers.optimizer import SingleOptimizer
 
 from cfgs.trainer import reward_tracker
 
-# TODO field
-
 export = d(
     cls=GoalTrainer,
     max_steps=400000,

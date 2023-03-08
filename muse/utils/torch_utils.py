@@ -535,13 +535,24 @@ class CAttrDict(AttrDict):
         return self.__dict__["_concat_arr"]
 
 
-def get_augment_fn(std, device="cuda"):
-    std_arr = to_torch(np.asarray(std)[None], device=device)
+def get_augment_fn(std):
+    std_arr = to_torch(np.asarray(std)[None], device="cpu")
     def fn(arr, **kwargs):
         nonlocal std_arr
         if std_arr.device != arr.device:
             std_arr = std_arr.to(device=arr.device)
         return arr + std_arr * torch.randn_like(arr)
+    return fn
+
+
+def get_masked_augment_fn(std, mask_key='mask', prefix='read_inputs', corr=False):
+    def fn(arr, memory=None, **kwargs):
+        mask = memory >> f"{prefix}/{mask_key}"
+        mask = unsqueeze_n(mask, len(arr.shape) - len(mask.shape), dim=-1)
+        if corr:
+            return arr + mask * std * torch.randn_like(arr[:, :1])
+        else:
+            return arr + mask * std * torch.randn_like(arr)
     return fn
 
 

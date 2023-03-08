@@ -24,8 +24,7 @@ class NpDataset(Dataset):
     def _init_params_to_attrs(self, params):
         super(NpDataset, self)._init_params_to_attrs(params)
         # None if we are starting a new file, o/w where we load from (can be a list)
-        self._input_files = params.get("file",
-                                       None)
+        self._input_files = params << "file"
         self._output_file = params["output_file"]  # Cannot be none, where we save data to
         assert params.output_file is not None
 

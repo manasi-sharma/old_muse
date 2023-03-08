@@ -21,15 +21,42 @@ def find_replace_brackets(string, params, fp=1):
     pattern = '{([^{]+)}'
     while re.search(pattern, string) is not None:
         s = re.search(pattern, string).group(1)
-        assert s in params.leaf_keys(), f"Value for {s} (found in {string}) not found in params! "
-        string_value = params[s]
-        if isinstance(string_value, float):
+        name = str(s)
+
+        # bool argument replace with name if True else nothing.
+        use_conditional = s.startswith('?')
+        if use_conditional:
+            # conditional of form {?name:true_replace[:false_replace]}
+            name = name[1:]
+            cond = name.split(':')
+            assert 1 <= len(cond) <= 3, f"conditional: {s} is not a valid format!"
+            # first element is the name to search
+            name = cond[0]
+            # if not specified, true string is the argument name
+            if len(cond) == 1:
+                cond = cond * 2
+            # if not specified, false string is empty
+            if len(cond) == 2:
+                cond = cond + ['']
+
+        assert name in params.leaf_keys(), f"Value for {name} (found in {string}) not found in params! "
+        string_value = params[name]
+
+        # parsing the string value.
+        if use_conditional:
+            # conditional {?name:true_replace:false_replace}
+            if string_value:
+                string_value = cond[1]
+            else:
+                string_value = cond[2]
+        elif isinstance(string_value, float):
             string_value = hr_name(string_value, fp=fp)
         else:
             string_value = str(string_value)
         string = string.replace(f'{{{s}}}', string_value)
 
     return string
+
 
 def prefix_lines(long_str, prefix):
     lines = long_str.split('\n')
@@ -210,7 +237,6 @@ if __name__ == '__main__':
 
     print('local arguments:', local_args)
     print('nested_args ->', json.dumps(nested_args, indent=4))
-
 
     """ testing filter... """
 
