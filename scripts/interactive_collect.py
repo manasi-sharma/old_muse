@@ -2,6 +2,7 @@
 Very similar to collect.py, but uses the interactive resetting functionality.
 """
 import os
+import sys
 
 from attrdict import AttrDict as d
 
@@ -11,8 +12,8 @@ from muse.datasets.np_dataset import NpDataset
 from muse.experiments import logger
 from muse.experiments.file_manager import ExperimentFileManager
 from muse.utils.file_utils import file_path_with_default_dir
-from muse.utils.general_utils import exit_on_ctrl_c, is_next_cycle
-from muse.utils.input_utils import ProcessUserInput, KeyInput as KI, wait_for_keydown_from_set
+from muse.utils.general_utils import exit_on_ctrl_c, timeit
+from muse.utils.input_utils import KeyInput as KI, wait_for_keydown_from_set
 from muse.utils.pygame_utils import TextFillPygameDisplay, PygameOnlyKeysInput
 from muse.utils.torch_utils import reduce_map_fn
 
@@ -68,33 +69,9 @@ if __name__ == '__main__':
     env_spec = params.env_spec.cls(params.env_spec)
     env = params.env_train.cls(params.env_train, env_spec)
 
-    # Generate input handle
-
-    # pygame display details
-    if args.use_env_display:
-        # environment owns display
-        display = env.display
-    else:
-        # script owns display
-        display = TextFillPygameDisplay(d())
-
-    assert display is not None, "Env (%s) doesn't have a display set up" % type(env)
-
-    # handling user input (uses pygame)
-    empty_handler = lambda ui, ki: None
-    input_handle = PygameOnlyKeysInput(d(display=display), {})
-
-    input_handle.register_callback(KI("r", KI.ON.down), empty_handler)
-    input_handle.register_callback(KI("y", KI.ON.down), empty_handler)
-    input_handle.register_callback(KI("n", KI.ON.down), empty_handler)
-    input_handle.register_callback(KI("q", KI.ON.down), quit)
-
-    # generate model and policy
+    # generate model
     model = params.model.cls(params.model, env_spec, None)
-    policy = params.policy.cls(params.policy, env_spec, env=env, input_handle=input_handle)
 
-    # generate dataset
-    logger.debug(f"Will save to file -> {args.save_file}")
     if args.dataset_save_group is None:
         ds = d(cls=NpDataset, batch_size=10, horizon=10, capacity=capacity, output_file=args.save_file)
     else:
@@ -111,11 +88,59 @@ if __name__ == '__main__':
 
     model.eval()
 
-    logger.debug("Beginning Interactive Evaluation.")
+    # Generate input handle
 
-    # de-prefix the names that we will get from output
-    raw_out_obs_names = [(oo[5:] if oo.startswith('next/') else oo) for oo in env_spec.output_observation_names]
-    raw_out_goal_names = [(og[5:] if og.startswith('next/') else og) for og in env_spec.output_goal_names]
+    # pygame display details
+    if args.use_env_display:
+        # environment owns display
+        display = env.display
+    else:
+        # script owns display
+        display = TextFillPygameDisplay(d())
+
+    assert display is not None, "Env (%s) doesn't have a display set up" % type(env)
+
+    # handling user input (uses pygame)
+    empty_handler = lambda ui, ki: None
+    input_handle = PygameOnlyKeysInput(d(display=display), {})
+
+    # global running variable, to respond to "quit" message
+    running = True
+    def quit(*local_args):
+        global running
+        running = False
+        sys.exit(0)
+
+    # reset action
+    def reset(*local_args):
+        global running
+        running = False
+
+    def early_terminate_fn(*args):
+        input_handle.run(rate_limited=False, once=True)
+        return not running
+
+    input_handle.register_callback(KI("r", KI.ON.down), reset)
+    input_handle.register_callback(KI("y", KI.ON.down), empty_handler)
+    input_handle.register_callback(KI("n", KI.ON.down), empty_handler)
+    input_handle.register_callback(KI("q", KI.ON.down), quit)
+
+    # generate policy
+    policy = params.policy.cls(params.policy, env_spec, env=env, input_handle=input_handle)
+
+    # generate dataset
+    logger.debug(f"Will save to file -> {args.save_file}")
+
+
+    def populate_display(*args, **kwargs):
+        if hasattr(env, "populate_display_fn"):
+            env.populate_display_fn(*args, **kwargs)
+        else:
+            display.populate_display(*args, **kwargs)
+
+
+    logger.debug("Beginning Interactive Evaluation.")
+    populate_display("Beginning...")
 
     do_save = False
 
@@ -125,22 +150,28 @@ if __name__ == '__main__':
             global do_save
 
             logger.info("UI: Save [y] or Trash [n]")
-            if hasattr(env, "populate_display_fn"):
-                env.populate_display_fn("UI: Save [y] or Trash [n]")
+            populate_display('UI: Save [y] or Trash [n]')
             res = wait_for_keydown_from_set(input_handle, [KI('y', KI.ON.down), KI('n', KI.ON.down)],
                                             do_async=False)
             do_save = res.key == 'y'
 
     step = 0
     ep = 0
+
+    # reset once to start (UI)
+    obs, goal = env.user_input_reset(input_handle)
+    policy.reset_policy(next_obs=obs, next_goal=goal)
+
     while not terminate_fn(step, ep):
-        logger.info(f"[{step}] Rolling out episode {ep}...")
+        running = True
 
-        # UI reset fn with the extra reset function that will ask if we should save or not
-        obs, goal = env.user_input_reset(input_handle, reset_action_fn=extra_reset_fn)
-        policy.reset_policy(next_obs=obs, next_goal=goal)
+        # clear the inputs
+        input_handle.run(once=True)
 
-        obs_history, goal_history, ac_history = rollout(args, policy, env, model, obs, goal)
+        logger.info(f"[{step}] Running episode {ep}...")
+        obs_history, goal_history, ac_history = rollout(args, policy, env, model, obs, goal,
+                                                        early_terminate_fn=early_terminate_fn)
+        print(timeit)
 
         step += len(obs_history) - 1
         ep += 1
@@ -149,6 +180,10 @@ if __name__ == '__main__':
 
         # actually add to dataset
         dataset_save.add_episode(inputs, outputs)
+
+        # UI reset fn with the extra reset function that will ask if we should save or not
+        obs, goal = env.user_input_reset(input_handle, reset_action_fn=extra_reset_fn)
+        policy.reset_policy(next_obs=obs, next_goal=goal)
 
         if do_save:
             logger.warn(f"[{step}] Saving data after {ep} episodes, data len = {len(dataset_save)}")

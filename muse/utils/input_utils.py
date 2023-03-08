@@ -318,7 +318,7 @@ def wait_for_keydown_from_set(input_handle, valid_set: List[KeyInput], do_async=
 if __name__ == '__main__':
     import cv2
     from muse.utils.pygame_utils import TextFillPygameDisplay, PygameOnlyKeysInput
-    rs = sbrl.envs.sensor.camera.RSDepthCamera(AttrDict(config_json=os.path.expanduser("~/test_config.json")))
+    rs = muse.envs.sensor.camera.RSDepthCamera(AttrDict(config_json=os.path.expanduser("~/test_config.json")))
     rs.open()
     cv2.namedWindow("test", cv2.WINDOW_NORMAL)
     # import matplotlib.pyplot as plt

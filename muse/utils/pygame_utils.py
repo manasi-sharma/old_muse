@@ -96,22 +96,6 @@ class TextFillPygameDisplay(PygameDisplay):
         pygame.display.flip()
 
 
-if __name__ == '__main__':
-    pg = TextFillPygameDisplay(AttrDict())
-    pg.create_display()
-
-    i = 0
-    while i < 50:
-        with timeit("populate"):
-            pg.populate_display("hello", "press enter to continue", "variable: %d" % i)
-        with timeit("sleep"):
-            time.sleep(0.1)
-
-        i += 1
-
-    print("Complete:\n", timeit)
-
-
 class PygameOnlyKeysInput(UserInput):
     def _init_params_to_attrs(self, params: AttrDict):
         super()._init_params_to_attrs(params)
@@ -212,3 +196,19 @@ class PygameOnlyKeysInput(UserInput):
             self.intermediate_key_states[key] = []  # reset it
         self.callback_lock.release()
         return ret
+
+
+if __name__ == '__main__':
+    pg = TextFillPygameDisplay(AttrDict())
+    pg.create_display()
+
+    i = 0
+    while i < 50:
+        with timeit("populate"):
+            pg.populate_display("hello", "press enter to continue", "variable: %d" % i)
+        with timeit("sleep"):
+            time.sleep(0.1)
+
+        i += 1
+
+    print("Complete:\n", timeit)

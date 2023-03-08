@@ -18,7 +18,7 @@ from muse.utils.general_utils import exit_on_ctrl_c, is_next_cycle
 from muse.utils.torch_utils import reduce_map_fn, to_numpy
 
 
-def rollout(local_args, local_policy, local_env, local_model, local_obs, local_goal):
+def rollout(local_args, local_policy, local_env, local_model, local_obs, local_goal, early_terminate_fn=None):
     """ Rollout environment for one episode (or earlier if max_steps
 
     Parameters
@@ -27,6 +27,9 @@ def rollout(local_args, local_policy, local_env, local_model, local_obs, local_g
     local_policy: Policy
     local_env: Env
     local_model: Model
+    early_terminate_fn: Optional[Callable]
+        returns a bool
+
 
     Returns
     -------
@@ -44,7 +47,7 @@ def rollout(local_args, local_policy, local_env, local_model, local_obs, local_g
     local_goal_history = []
     local_ac_history = []
 
-    while not done[0]:
+    while not done[0] and (not early_terminate_fn or not early_terminate_fn(local_env, local_obs, local_goal)):
         # empty axes for (batch_size, horizon)
         expanded_obs = local_obs.leaf_apply(lambda arr: arr[:, None])
         expanded_goal = local_goal.leaf_apply(lambda arr: arr[:, None])
@@ -100,6 +103,11 @@ def parse_history(spec, local_obs_history, local_goal_history, local_ac_history)
     local_outputs: AttrDict
 
     """
+
+    # de-prefix the names that we will get from output
+    raw_out_obs_names = [(oo[5:] if oo.startswith('next/') else oo) for oo in spec.output_observation_names]
+    raw_out_goal_names = [(og[5:] if og.startswith('next/') else og) for og in spec.output_goal_names]
+
     # concatenate into one big episode
     obs = d.leaf_combine_and_apply([(o > spec.observation_names) for o in local_obs_history[:-1]], np.concatenate)
     goals = d.leaf_combine_and_apply([(g > spec.goal_names) for g in local_goal_history[:-1]], np.concatenate)
@@ -197,10 +205,6 @@ if __name__ == '__main__':
     model.eval()
 
     logger.debug("Beginning Evaluation.")
-
-    # de-prefix the names that we will get from output
-    raw_out_obs_names = [(oo[5:] if oo.startswith('next/') else oo) for oo in env_spec.output_observation_names]
-    raw_out_goal_names = [(og[5:] if og.startswith('next/') else og) for og in env_spec.output_goal_names]
 
     step = 0
     ep = 0
