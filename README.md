@@ -57,7 +57,8 @@ Environments are very similar to that in OpenAI's `gym` format. They use a share
 These environments implement, for example:
 - `step(action: AttrDict, ...) -> obs, goal, done`: Similar to gym, but everything is an AttrDict, except done which is a 1 element bool array.
 - `reset(presets: AttrDict) -> obs, goal`: Like gym, but enables presets to constrain the resetting.
-- `get_default_env_spec_params(env_params: AttrDict) -> AttrDict`: This returns a default env spec parameters for a given environment (including the class as `cls=...`)
+- `default_params: AttrDict`: This is a set of default params that you might use to instantiate the environment (`make` uses this)
+- `get_default_env_spec_params(env_params: AttrDict) -> AttrDict`: This returns a default env spec parameters for a given environment, including the spec class as `cls=...` (`make` uses this)
 
 Some Implemented Environments:
 - `muse.envs.simple.gym.GymEnv`: a gym environment wrapper for all gymnasium environments
@@ -66,6 +67,14 @@ Some Implemented Environments:
 - `muse.envs.pymunk.<>`: 2D block manipulation environments in pymunk, including maze navigation, 2D stacking, and much more.
 - `muse.envs.polymetis.polymetis_panda_env.PolymetisPandaEnv`: a polymetis wrapper for robot control
 - `muse.envs.bullet_envs.block3d.<>`: 3D block / mug manipulation environments implemented in pybullet.
+
+For all environments that implement the above functions, you can manually create them or instantiate them through `muse.envs.env.make`, for example point mass:
+
+`env = make(PointMassEnv, AttrDict(render=True))`
+
+You can provide additional parameters in the call to `make` to override `Env.default_params`, for example `render=True` here.
+This function simply creates the parameters for the environment, uses that to instantiate an env_spec using `get_default_env_spec_params`, then instantiates the env_spec and the env.
+You can access the env_spec via `env.env_spec`.
 
 ### muse.models
 Models are an extension of `torch.nn.Module`, but with native support for AttrDicts, input / output normalization, pre/postprocessing, and much more.

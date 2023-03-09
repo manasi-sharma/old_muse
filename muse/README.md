@@ -38,4 +38,6 @@ With the model trained in `experiments/<exp_name>/models/` (e.g., `model.pt`), w
 
 `python scripts/interactive_collect.py --max_steps 10000 --model_file model.pt --save_file robot_eval.npz cfgs/exp_hvs/coffee/vis_bc_rnn.py --dataset make-coffee_eimgs_100ep`
 
-We once again specify the dataset to the config since that will load the correct experiment name. This will launch a pygame based interface for controlling execution.
+We once again specify the same dataset to the config since that will load the correct experiment name. This will launch a pygame based interface for controlling execution.
+
+For the polymetis panda environment we use, you can specify the correct camera id by adding `%env_train %%camera --cv_cam_id <>` at the end of the command above, or by manually changing the environment config in `cfgs/env/polymetis_panda.py`.

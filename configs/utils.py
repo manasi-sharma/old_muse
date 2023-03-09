@@ -143,6 +143,9 @@ def split_local_and_group_args(arg_strings, char, only_local=False):
         if char_cnt == 0 or char_cnt > 1:
             # check for specified group (can't be unspecified, but just in case)
             assert curr_group is not None, f"Cannot add {arg} since no group was specified..."
+            # strip nested sub-group
+            if char_cnt > 1:
+                arg = arg[1:]
             # add the argument to the current group for regular arguments and further nested arguments for this group.
             nested_child_arg_strings[curr_group].append(arg)
             # print(f"{arg} going to {curr_group}")

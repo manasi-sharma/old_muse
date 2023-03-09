@@ -400,6 +400,10 @@ if __name__ == '__main__':
             model=d(
                 cls=Model,
                 ignore_inputs=True,
+                nested_group=d(
+                    cls=Model,
+                    inside_param=10,
+                )
             ),
             policy=d(
                 cls=Policy,

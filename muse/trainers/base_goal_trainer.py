@@ -266,7 +266,9 @@ class BaseGoalTrainer:
                 (env_memory["history/obs"])[-self._goal_policy_uses_last_n_inputs:],
                 lambda vs: np.concatenate(vs, axis=1))
             # if len(env_memory["history/goal"]) > 0:
-            #     stacked_goal = AttrDict.leaf_combine_and_apply((env_memory["history/goal"])[-self._goal_policy_uses_last_n_inputs:], lambda vs: torch.cat(vs, dim=1))
+            #     stacked_goal = AttrDict.leaf_combine_and_apply(
+            #       (env_memory["history/goal"])[-self._goal_policy_uses_last_n_inputs:],
+            #       lambda vs: torch.cat(vs, dim=1))
             # else:
             #     stacked_goal = AttrDict()
 
