@@ -25,25 +25,28 @@ class GoalTrainer(BaseGoalTrainer):
                  policy_holdout=None,
                  goal_policy_holdout=None,
                  reward=None,
+                 writer=None,
                  optimizer=None):
         """
-
         Trainer for a goal_policy, if you want online env steps during training.
         NOTE: env will be reset when either env is terminated or goal_policy is terminated. TODO option for terminate when policy is done
 
-        :param params: parameters for training
-        :param file_manager:
-        :param model: a global model, with all the parameters necessary for computation at each level.
-        :param policy: produces actions for train env
-        :param goal_policy: produces goals for train policy/eng
-        :param datasets_train: a list of training datasets to maintain
-        :param datasets_holdout: a list of holdout datasets to maintain.
-        :param env_train: the environment to step during training.
-        :param env_holdout: the environment to step during holdout.
-        :param reward: A Reward object to compute rewards, None means use the environment reward.
-        :param optimizer: Optimizer object to step the model.
-        :param policy_holdout: produces actions for the holdout env, None means same as train.
-        :param goal_policy_holdout: produces goals for the holdout policy/env, None means same as train.
+        Parameters
+        ----------
+        params: parameters for training
+        file_manager: manages
+        model: a global model, with all the parameters necessary for computation at each level.
+        policy: produces actions for train env
+        goal_policy: produces goals for train policy/eng
+        datasets_train: a list of training datasets to maintain
+        datasets_holdout: a list of holdout datasets to maintain.
+        env_train: the environment to step during training.
+        env_holdout: the environment to step during holdout.
+        policy_holdout: produces actions for the holdout env, None means same as train.
+        goal_policy_holdout: produces goals for the holdout policy/env, None means same as train.
+        reward: A Reward object to compute rewards, None means use the environment reward.
+        writer: A Writer object (or None, in which case we will create a Tensorboard writer)
+        optimizer: Optimizer object to step the model.
         """
         self._datasets_train = datasets_train
         self._datasets_holdout = datasets_holdout
@@ -53,7 +56,7 @@ class GoalTrainer(BaseGoalTrainer):
         self._dataset_samplers_holdout = [ds.sampler for ds in datasets_holdout]
 
         super(GoalTrainer, self).__init__(params, file_manager, model, policy, goal_policy, env_train, env_holdout,
-                                          policy_holdout, goal_policy_holdout, reward=reward, optimizer=optimizer)
+                                          policy_holdout, goal_policy_holdout, reward=reward, optimizer=optimizer, writer=writer)
 
     def _init_params_to_attrs(self, params):
         super(GoalTrainer, self)._init_params_to_attrs(params)

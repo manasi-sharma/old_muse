@@ -82,6 +82,10 @@ class ExperimentFileManager(FileManager):
         os.makedirs(self._exp_dir, exist_ok=True)
         return self._exp_dir
 
+    @property
+    def exp_name(self):
+        return self._exp_name
+
     ##########
     # Models #
     ##########

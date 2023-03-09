@@ -63,7 +63,7 @@ class VRPoseTeleopPolicy(Policy):
 
         # parses obs -> pose 7d
         self.get_pose_from_obs_fn = get_with_default(params, "get_pose_from_obs_fn", lambda obs: cat_any(
-            [(obs["ee_position").reshape(-1), fast_euler2quat((obs["ee_orientation_eul"]]).reshape(-1))],
+            [obs["ee_position"].reshape(-1), fast_euler2quat(obs["ee_orientation_eul"]).reshape(-1)],
             dim=-1))  # this will be the pose.
         self.get_gripper_from_obs_fn = get_with_default(params, "get_gripper_from_obs_fn",
                                                         lambda obs: obs[self.gripper_pos_name].reshape(-1))

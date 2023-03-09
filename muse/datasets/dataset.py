@@ -14,6 +14,9 @@ class Dataset(abstract.BaseClass, Sized, TD.IterableDataset):
     """
     Iterable Dataset that implements get_batch.
 
+    There are two types of names that will be stored:
+    (1) step names: these are names that are returned every step (e.g. obs / action names)
+    (2) one-time names: these are names that either come at the start or end of an episode.
     """
 
     def __init__(self, params, env_spec, file_manager, base_dataset=None):

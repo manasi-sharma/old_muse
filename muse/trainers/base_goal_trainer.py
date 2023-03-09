@@ -5,17 +5,18 @@ import shutil
 
 import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
 from muse.experiments import logger
 
 from muse.metrics.metric import ExtractMetric
 from muse.metrics.tracker import BufferedTracker, Tracker
+from muse.trainers.writers import Writer, TensorboardWriter
 from muse.utils.general_utils import is_next_cycle, listify, timeit
 from muse.utils.torch_utils import to_numpy, add_horizon_dim, torch_mappable, to_torch
 
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
+
 
 class BaseGoalTrainer:
 
@@ -28,10 +29,13 @@ class BaseGoalTrainer:
                  policy_holdout=None,
                  goal_policy_holdout=None,
                  reward=None,
+                 writer=None,
                  optimizer=None):
-        """ Don't use this directly. Does not implement run(), or train_step(). Mainly just a useful way to handle online env steps with multi-level policies.
+        """ Don't use this directly. Does not implement run(), or train_step().
 
-        NOTE: env will be reset when either env is terminated or goal_policy is terminated. TODO option for terminate when policy is done
+        Mainly just a useful way to handle online env steps with multi-level policies.
+        NOTE: env will be reset when either env is terminated or goal_policy is terminated.
+        TODO option for terminate when policy is done
 
         Parameters
         ----------
@@ -40,13 +44,12 @@ class BaseGoalTrainer:
         model: a global model, with all the parameters necessary for computation at each level.
         policy: produces actions for train env
         goal_policy: produces goals for train policy/eng
-        datasets_train: a list of training datasets to maintain
-        datasets_holdout: a list of holdout datasets to maintain.
         env_train: the environment to step during training.
         env_holdout: the environment to step during holdout.
         policy_holdout: produces actions for the holdout env, None means same as train.
         goal_policy_holdout: produces goals for the holdout policy/env, None means same as train.
         reward: A Reward object to compute rewards, None means use the environment reward.
+        writer: A Writer object (or None, in which case we will create a Tensorboard writer)
         optimizer: Optimizer object to step the model.
         """
         self._file_manager = file_manager
@@ -156,11 +159,19 @@ class BaseGoalTrainer:
         if self._enable_writers:
             l_path = os.path.join(self._file_manager.exp_dir, "loss.csv")
             csv_file = open(l_path, "a+")
-            self._writer = csv.writer(csv_file, delimiter=',')
-            self._summary_writer = SummaryWriter(self._file_manager.exp_dir)
+            self._csv_writer = csv.writer(csv_file, delimiter=',')
+
+            if writer is None:
+                self._summary_writer = TensorboardWriter(self._file_manager.exp_name, AttrDict(), file_manager)
+            else:
+                assert isinstance(writer, Writer), f"Trainer writer is not a subclass of Writer! {writer}"
+                self._summary_writer = writer
+
+            # actually instantiate the writer
+            self._summary_writer.open()
         else:
             logger.warn("Writers are disabled!")
-            self._writer = None
+            self._csv_writer = None
             self._summary_writer = None
 
         # scalars to log after each env_train step

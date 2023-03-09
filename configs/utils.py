@@ -17,7 +17,7 @@ def hr_name(float_arg, fp=None):
     return str(float_arg).replace('.', '_')
 
 
-def find_replace_brackets(string, params, fp=1):
+def find_replace_brackets(string, params, fp=None):
     pattern = '{([^{]+)}'
     while re.search(pattern, string) is not None:
         s = re.search(pattern, string).group(1)

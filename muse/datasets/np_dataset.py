@@ -19,6 +19,11 @@ from muse.utils.torch_utils import split_dim_np, split_dim, broadcast_dims, broa
 
 
 class NpDataset(Dataset):
+    """
+    This is the default dataset that you can use for most experiments.
+
+    It stores and reads from .npz files.
+    """
 
     # # @abstract.overrides
     def _init_params_to_attrs(self, params):
@@ -28,7 +33,7 @@ class NpDataset(Dataset):
         self._output_file = params["output_file"]  # Cannot be none, where we save data to
         assert params.output_file is not None
 
-        # set to inf tMo keep recording everything
+        # set to inf to keep recording everything
         # max length of dataset (transitions) before overriding (useful for replay buffer)
         self._capacity = int(params.capacity)
         assert self._capacity < np.inf

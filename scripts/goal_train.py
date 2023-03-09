@@ -1,20 +1,25 @@
-import argparse
 import sys
 
+from attrdict import AttrDict
+
 from configs.helpers import load_base_config, get_script_parser
+from muse.envs.env import Env
 from muse.experiments import logger
 from muse.experiments.file_manager import ExperimentFileManager
+from muse.trainers.writers import WandbWriter
 
 if __name__ == '__main__':
     parser = get_script_parser()
     parser.add_argument('config', type=str, help="common params for all modules.")
     parser.add_argument('--continue', action='store_true')
     parser.add_argument('--print_all', action='store_true')
+    parser.add_argument('--no_env', action='store_true')
     parser.add_argument('--do_holdout_env', action='store_true')
     parser.add_argument('--different_env_holdout', action='store_true')
     parser.add_argument('--num_datasets', type=int, default=1)
     parser.add_argument('--model_dataset_idx', type=int, default=-1)
     parser.add_argument('--run_async', action='store_true')
+    parser.add_argument('--wandb_project', type=str, default='muse')
     local_args, unknown = parser.parse_known_args()
 
     logger.debug(f"Raw command: \n{' '.join(sys.argv)}")
@@ -32,16 +37,23 @@ if __name__ == '__main__':
 
     # instantiate classes from the params
     env_spec = params.env_spec.cls(params.env_spec)
-    env_train = params.env_train.cls(params.env_train, env_spec)
 
-    if not local_args.do_holdout_env:
+    # instantiate the env
+    if local_args.no_env:
+        env_train = Env(AttrDict(), env_spec)
+        assert not local_args.do_holdout_env, "Cannot do holdout env if --no_env!"
         env_holdout = None
     else:
-        if local_args.different_env_holdout:
-            env_holdout = params.env_holdout.cls(params.env_holdout, env_spec)
+        env_train = params.env_train.cls(params.env_train, env_spec)
+        if not local_args.do_holdout_env:
+            env_holdout = None
         else:
-            env_holdout = params.env_train.cls(params.env_train, env_spec)
+            if local_args.different_env_holdout:
+                env_holdout = params.env_holdout.cls(params.env_holdout, env_spec)
+            else:
+                env_holdout = params.env_train.cls(params.env_train, env_spec)
 
+    # create all the datasets
     datasets_train, datasets_holdout = [], []
     for i in range(local_args.num_datasets):
         suffix = f"_{i}" if local_args.num_datasets > 1 else ""
@@ -67,6 +79,11 @@ if __name__ == '__main__':
 
     reward = params.reward.cls(params.reward, env_spec) if params.has_leaf_key("reward/cls") else None
 
+    # writer
+    # writer = None
+    writer = WandbWriter(exp_name, AttrDict(project_name=local_args.wandb_project, config=params.as_dict()),
+                         file_manager, resume=getattr(local_args, 'continue'))
+
     # trainer
     trainer = params.trainer.cls(params.trainer,
                                  file_manager=file_manager,
@@ -79,6 +96,7 @@ if __name__ == '__main__':
                                  env_holdout=env_holdout,
                                  policy_holdout=policy_holdout,
                                  goal_policy_holdout=goal_policy_holdout,
+                                 writer=writer,
                                  reward=reward)
 
     if local_args.run_async:

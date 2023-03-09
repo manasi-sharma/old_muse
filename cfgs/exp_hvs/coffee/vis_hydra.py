@@ -2,12 +2,13 @@ from attrdict import AttrDict as d
 
 from cfgs.dataset import np_img_base_seq
 from cfgs.env import polymetis_panda
-from cfgs.model import vis_bc_rnn
+from cfgs.model import vis_hydra
 
-from cfgs.trainer import real_trainer
+from cfgs.trainer import real_goal_trainer
 from configs.fields import Field as F
 from muse.envs.polymetis.polymetis_utils import get_polymetis_online_action_postproc_fn, modify_spec_prms, \
     get_wp_dynamics_fn
+from muse.policies.basic_policy import BasicPolicy
 from muse.policies.bc.hydra.hydra_policy import HYDRAPolicy
 from muse.policies.memory_policy import get_timeout_terminate_fn
 
@@ -24,8 +25,10 @@ export = d(
         wp_dynamics_fn=get_wp_dynamics_fn(fast_dynamics=True),
     ),
     env_train=polymetis_panda.export,
-    model=vis_bc_rnn.export & d(
+    model=vis_hydra.export & d(
         state_names=['ee_position', 'ee_orientation', 'gripper_pos'],
+        goal_names=[],
+        sparse_action_names=['target/ee_position', 'target/ee_orientation'],
         device=F('device'),
     ),
 
@@ -65,8 +68,12 @@ export = d(
         online_action_postproc_fn=get_polymetis_online_action_postproc_fn(no_ori=False, fast_dynamics=True),
         is_terminated_fn=get_timeout_terminate_fn(1200),
     ),
-
-    trainer=real_trainer.export & d(
+    goal_policy=d(
+        cls=BasicPolicy,
+        policy_model_forward_fn=lambda m, o, g, **kwargs: d(),
+        timeout=2,
+    ),
+    trainer=real_goal_trainer.export & d(
         train_do_data_augmentation=F('augment'),
     ),
 )

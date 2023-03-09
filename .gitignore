@@ -20,3 +20,4 @@ Muse.*
 /data/
 /logs/
 MUJOCO_LOG.TXT
+/wandb/

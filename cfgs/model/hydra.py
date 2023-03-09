@@ -1,3 +1,4 @@
+from configs.fields import Field as F
 from muse.models.bc.hydra.dynas_gcbc_model import RNN_DAS_GCBC
 from muse.utils.loss_utils import get_default_mae_action_loss_fn
 from attrdict import AttrDict as d
@@ -56,12 +57,11 @@ export = d(
     raw_out_name='policy_raw',
     inner_postproc_fn=None,
     image_keys=[],
-    mode0_loss_fn=get_default_mae_action_loss_fn(policy_out_names=['target/position', 'target/orientation'],
-                                                 vel_act=False,
-                                                 policy_out_norm_names=['target/position',
-                                                                        'target/orientation']),
-    mode1_loss_fn=get_default_mae_action_loss_fn(policy_out_names=['action'], vel_act=True,
-                                                 policy_out_norm_names=[]),
+    mode0_loss_fn=F('sparse_action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x,
+                                                                                    vel_act=False,
+                                                                                    policy_out_norm_names=x)),
+    mode1_loss_fn=F('action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x, vel_act=True,
+                                                                             policy_out_norm_names=[])),
     default_normalize_sigma=1.0,
     split_head_layers=2,
     mode_head_size=200,

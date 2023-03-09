@@ -169,6 +169,7 @@ if __name__ == '__main__':
         input_handle.run(once=True)
 
         logger.info(f"[{step}] Running episode {ep}...")
+        populate_display("'r' to reset and 'q' to quit")
         obs_history, goal_history, ac_history = rollout(args, policy, env, model, obs, goal,
                                                         early_terminate_fn=early_terminate_fn)
         print(timeit)

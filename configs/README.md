@@ -1,6 +1,9 @@
 # Configurations
 
-Config files specify experimental parameters, and each script will require different components be specified, in a specific order. For example, `scripts/train.py` requires the following groups:
+In `muse` we use a modular, tree-like configuration specification which is written entirely in python, and supports command line overrides.
+This allows configs to contain python expressions, objects, and functions.
+
+Config files specify experimental parameters, and each script will use different groups. For example, `scripts/train.py` requires the following groups:
 - env_spec
 - env_train
 - dataset_train
@@ -9,153 +12,177 @@ Config files specify experimental parameters, and each script will require diffe
 - policy
 - trainer
 
-We split config loading into a `declare` phase, a `process` phase, and an `instantiate` phase.
+These groups might also have their own subgroups, and the `configs` module will resolve this structure into a tree, where each node is a `ConfigNode` object that has local parameters and children that are `ConfigNode` objects.
 
-### Declaring
+To create these configs, the `configs` module here supports either *declarative* or *programmatic* configuration files specified in python. 
+Declarative configs declare parameters initially and somewhat statically.
+Programmatic configs declare a parser to load arguments, and then later compute the parameters based on the arguments and other values in the tree.
+Both types of config can be used in place of any group or subgroup, which makes this a very modular way of specifying configurations.
 
-Each group specifies a parser, which will get required and optional arguments from the command line or from files. We use the `argparse` package to parse the command line, using the custom `sbrl.experiments.grouped_parser.GroupedArgumentParser`, which reads group params in the following format (with `%` as the group prefix character):
+The `configs` module also natively supports command line overriding of parameters, of the form:
 
-`python <script> <args> %group_name <args> %next_group_name <args> ...`
+`python <script> <script_args> <config_file> <args> %group_name <args> %%subgroup_name <args> %next_group_name <args> ...`
 
-All scripts defined in `scripts/` should support `LoadableArgumentParser`, which requires you to specify a single argument for each group that points to a file that will define the true parameters, with syntax:
+This makes it very easy to update parameters for experiment runs without creating a new configuration file.
 
-`python <script> <args> %group1_name configs/group1_config.py <extra_args> ...`
 
-Note that additional args can be specified for each loadable parser after the python file (e.g., `%group1 group1_config.py --render --debug`). Also note that if these extra arguments are specified in a .txt file, you can incorporate them by prefixing the filename by `@` (e.g., `%group1 group1_config.py @args.txt`, where `args.txt` contains `--render --debug`).
+## Declarative Configs
 
-Also note that different groups exist in their own "containers," so do not worry about duplicate names across group boundaries.
-
-Finally, many scripts require a base config, which defines a set of constants or functions that will be useful during processing.
-
-### Processing
-
-Once default arguments have been parsed from all groups, the calling script will process each group one by one. Groups will take in the global processed parameters until now, and make their own contributions.
-Processing usually involves converting the set of arguments into an instantiable specification (e.g., in `train.py`, the `env_spec` group processing will specify what `sbrl.envs.env_spec.EnvSpec` to instantiate in python, and with what parameters).
-
-### Instantiating
-
-The script does this part, taking the final processed params after the last group, and instantiating all relevant python classes. Then, the script will do some work with each component.
-
-## Config specification
-
-There are three types of "two" files. 
-The first is a base config, which can pre-specify or aggregate some groups and common arguments for modules to share.
-The second is a module config, which will specify `declare_arguments` and `process_params` functions for the given module.
-
-### Base config
-
-This config is the "root" config of the experiment, which might do things like set some initial arguments for groups that it expects.
-An example with comments can be seen in `configs/example/base_gym_config.py`, replicated here for convenience:
-
+Declarative configs declare all the parameters and groups up front in the form of an `AttrDict`, for example:
 ```python
-## configs/example/base_gym_config.py ##
-
-from argparse import ArgumentParser
-
-from muse.experiments.grouped_parser import LoadedGroupedArgumentParser, GroupedArgumentParser
-from muse.utils.config_utils import get_config_args
-from muse.utils.python_utils import AttrDict
-
-# this has helper functions for the current set of experiments.
-from configs.example import utils
-
-# Set up a parser for just the base config parameters, these should be "global" fields that many modules will need.
-parser = ArgumentParser()
-parser.add_argument('--device', type=str, default="cuda")
-parser.add_argument('--horizon', type=int, default=1)
-parser.add_argument('--batch_size', type=int, default=1024)
-args = parser.parse_args(get_config_args())
-
-
-def get_exp_name(common_params):
-    """
-    The loading process will call this to figure out the experiment name (which determines where your experiment saves).
-    """
-    # lazily executed, gets the name from the overall common_params.
-    # this function might be chained by future experiments to add on more details to the name.
-    env_type = common_params >> "env_train/env_type"  # required for gym envs
-    env_type_hr = env_type.lower()
-    return f"gym/{env_type_hr}_b{common_params >> 'batch_size'}_h{common_params >> 'horizon'}"
-
-
-# GLOBAL parameters, which will be the starting point for "common_params" seen in sub-groups
-params = GroupedArgumentParser.to_attrs(args) & AttrDict(exp_name=get_exp_name, utils=utils)
-
-# example of how to set default groups, here with the gym "env_spec" and "env_train"
-# some useful flags for this parser:
-#   prepend_args: Some initial arguments to pass in to the config, for more precise defaults.
-#   allow_override: If False, this group's arguments will be FIXED.
-params.env_spec = LoadedGroupedArgumentParser(file_name="configs/gym/gym_env_spec_config.py")
-params.env_train = LoadedGroupedArgumentParser(file_name="configs/gym/gym_env_config.py")
+from attrdict import AttrDict as d
+export = d(
+   global_arg1=1,
+   ...,
+   group1=d(
+      cls=...,
+      arg1=True,
+      ...,
+      subgroup1_1=d(
+          cls=...,
+          subarg1=...,
+          ...,
+      )
+   ),
+   group2=d(
+      cls=...,
+      arg2_1=10,
+      ...
+   ),
+   ...,
+)
 ```
 
-**NOTE**: While arguments for each group are in their own name spaces, and thus can conflict without issue, the arguments provided to the base config should NOT conflict with arguments passed into the calling script.
-
-For example, with the base config above, the script should not have any arguments for `device`, `horizon`, or `batch_size`.
-
-**TODO**: In the future we will fix this bug by treating the base config as its own group, but for now be aware that this bug will not throw any errors...
-
-### Module config
-
-Module config files declare and parse a specific module (e.g., model). 
-To support the "declare, process, instantiate" pipeline with `LoadableArgumentParser`, module config files should define two functions:
-
-- `declare_arguments(parser)`: returns a parser that will get the specific arguments required for this config.
-< the calling script will then call parser.parse_args()>
-- `process_params(group_name, prms)`: takes in the parameterization (included by group in common_params), and makes any changes
-                    to the global config based on all the loaded / default params.
-
-Finally, they should export these as an `AttrDict` named `params`
-
-### Static
-
-Sometimes arguments to the configs don't change often and we want a short-hand to store these arguments. The argument parsers here support loading from static files, which you can add as you like.
-By convention, these static configs will be `.txt` files located under `configs/<exp_name>/static/`.
-
-An example would be, for specifying `%model` group args for BC-RNN, `configs/exp_hvs/static/state_bc_rnn.txt`:
-
+The above declarative config will resolve into the following tree of ConfigNodes:
 ```
---use_lstm
---use_tanh_out
---use_quat
---do_mse_err
---no_goal
---disable_norm
---disable_input_norm
---do_grab_norm
---exclude_velocities
---hidden_size 400
---policy_size 0
+root:
+    group1:
+        subgroup1
+    group2:
 ```
 
-These arguments do not have to be split by line, this is just cleaner.
+### Command Line
 
-To include this command, for example during training, you can prefix the file name with the `@` symbol, which tells the parser to load arguments from file. For example:
+All `float`, `int`, `bool`, and `string` args in this config will automatically be override-able from the command line. 
+For `bool` args specifically, if the value is True, the argument name `arg_name` will be automatically changed to `no-{arg_name}` for parsing.
+For example, I might run from command line:
 
-`python scripts/train.py configs/gym/base_gym_config.py @configs/gym/static/<static_file>.txt`
+`python <some_script> <config_file_above> --global_arg1 2 %group1 --no-arg1 %group2 --arg2_1 11`
 
-
-### Directory format
-
-`example_processed_params` functions will be specified within `src/`, to load each class with some rigid set of parameters. You can always override these in your own config files.
-Calling these functions will be the responsibility of the `base_config.py` file. For training/eval experiments, we might structure the dir as follows:
-
+This will update the params to be:
+```python
+from attrdict import AttrDict as d
+export = d(
+   global_arg1=2,
+   ...,
+   group1=d(
+      cls=...,
+      arg1=False,
+      ...,
+      subgroup1_1=d(
+          cls=...,
+          subarg1=...,
+          ...,
+      )
+   ),
+   group2=d(
+      cls=...,
+      arg2_1=11,
+      ...
+   ),
+   ...,
+)
 ```
-- configs
-    - <model_type>/
-        - specific_model_config.py
-    - <env_type>/
-        - specific_env_config.py
-    - exp_<exp_group>/
-        - static/
-            - default_args.txt
-        - base_config.py (with default env, env_spec, datasets)
-        - all_args.txt
+
+Because this is python, we can easily import 
+
+### Fields
+
+We also define a `Field` attribute which allows for conditional or dependent parameters using other tree elements. 
+A `Field` is initialized with a key to link the output to, and a function which takes the final processed value for the key and arbitrarily maps it.
+Currently fields cannot link to keys that also have Field values (no recursive Fields). 
+Keys will first be looked up locally in the config node (use a relative path), and then in the entire existing tree structure (global path)
+
+For example let us assume we want to declare the batch size and horizon length globally for both the dataset and the model to see.
+Our config might take the following form:
+```python
+from attrdict import AttrDict as d
+from configs.fields import Field as F
+from muse.models.basic_model import BasicModel
+from muse.datasets.np_dataset import NpDataset
+export = d(
+    half=5,
+    batch_size=100,
+    horizon=10,
+    model=d(
+        cls=BasicModel,
+        horizon=F('horizon'),
+        full=F('half', lambda x: 2*x),
+    ),
+    dataset_train=d(
+        cls=NpDataset,
+        horizon=F('horizon'),
+        batch_size=F('batch_size'),
+        ...
+    ),
+)
 ```
 
-Here, `all_args.txt` might contain the command line call required to run an experiment. The base config can specify `LoadedGroupedArgumentParser` linking to specific files to load. These can be overrided from command line.
+### Experiment Names
 
-## Example: LfP
+The experiment name is also computed in a recursive fashion, in depth first order of the groups and subgroups. 
+Each group can have an `exp_name` argument that can be either:
+1. A string, with support for substitution with string-convertable local arguments in brackets and support for boolean conditional strings.
+   1. For example, `exp_name="dir/b{batch_size}_h{horizon}{?augment:_aug}"` for batch size 100, horizon 10, and augment=True would parse into `exp_name="dir/b100_h10_aug"`
+   2. Boolean conditionals take the form `"{?bool_arg_name:true_string\[:false_string\]}"`
+2. A function, which more generally takes in the parameters at this level and returns a string.
 
-We will use Learning from Play, on the StackBlock2D env to demonstrate this config specification flow.
+Importantly this defines the local name of the experiment, where subgroups might add on to this in depth first order.
 
+For example consider the following experiment from earlier but with exp_names: 
+```python
+from attrdict import AttrDict as d
+from configs.fields import Field as F
+from muse.models.basic_model import BasicModel
+from muse.datasets.np_dataset import NpDataset
+export = d(
+    exp_name="directory/b{batch_size}_h{horizon}{?augment:_aug}",
+    augment=False,
+    half=5,
+    batch_size=100,
+    horizon=10,
+    model=d(
+        exp_name="basic_model_f{full}",
+        cls=BasicModel,
+        horizon=F('horizon'),
+        full=F('half', lambda x: 2*x),
+    ),
+    dataset_train=d(
+        cls=NpDataset,
+        horizon=F('horizon'),
+        batch_size=F('batch_size'),
+        ...
+    ),
+)
+```
+The final experiment name here would be `exp_name="directory/b100_h10_basic_model_f10"`. 
+Most of the time, this functional string representation is all you need, but sometimes you might need more general experiment names, so we also support functions in place of a string.
+
+
+Examples of declarative configs can be found in `cfgs/...`.
+
+## Programmatic Configs
+
+Programmatic Configs are defined as subclasses of `ConfigNode`, which should override (call super first):
+1. `declare_arguments(self, parser, defaults, cls_skip_args)`: Take a parser, default values, and class arguments to skip, and declare new arguments to the parser.
+2. `process_params(self, namespace, node_params, global_params=None)`: Take the parsed local arguments, default node parameters, and global parameters (tree so far), and update node parameters based on the arguments.
+
+You can also mix programmatic and declarative configs using the following optional default values to override:
+- `default_cls`: default class for the config node (same as default value for `cls` in the declarative format)
+- `default_local_exp_name`: default local experiment name chunk (same as in declarative, string or function)
+- `default_cls_skip_args`: default arguments to skip from cls.predefined_arguments
+- `default_params`: default parameters for the class to be instantiated with (same as the other parameters in a group)
+
+Examples of programmatic configs can be found in `configs/...`.
+
+[TODO more on programmatic configs]

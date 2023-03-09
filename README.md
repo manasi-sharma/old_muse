@@ -55,8 +55,15 @@ Environments are very similar to that in OpenAI's `gym` format. They use a share
 These environments implement, for example:
 - `step(action: AttrDict, ...) -> obs, goal, done`: Similar to gym, but everything is an AttrDict, except done which is a 1 element bool array.
 - `reset(presets: AttrDict) -> obs, goal`: Like gym, but enables presets to constrain the resetting.
+- `get_default_env_spec_params(env_params: AttrDict) -> AttrDict`: This returns a default env spec parameters for a given environment (including the class as `cls=...`)
 
-Environments used for PLATO are described under the Play-Specific Environments section below.
+Some Implemented Environments:
+- `muse.envs.simple.gym.GymEnv`: a gym environment wrapper for all gymnasium environments
+- `muse.envs.simple.point_mass_env.PointMassEnv`: a 2D point mass example where you are trying to reach a moving (or static) target.
+- `muse.envs.robosuite.robosuite_env.RobosuiteEnv`: robosuite environments. currently this uses a robomimic wrapper, so both robomimic and robosuite should be installed (TODO fix)
+- `muse.envs.pymunk.<>`: 2D block manipulation environments in pymunk, including maze navigation, 2D stacking, and much more.
+- `muse.envs.polymetis.polymetis_panda_env.PolymetisPandaEnv`: a polymetis wrapper for robot control
+- `muse.envs.bullet_envs.block3d.<>`: 3D block / mug manipulation environments implemented in pybullet.
 
 ### muse.models
 Models are an extension of `torch.nn.Module`, but with native support for AttrDicts, input / output normalization, pre/postprocessing, and much more.
@@ -87,12 +94,13 @@ For more information on how to set up and work with configs, see `configs/README
 ## Scripts
 
 Scripts in `muse` follow a similar format, here are the basic ones that one might regularly use:
-- `scripts/train.py`: Train a model (used primarily for offline training without environment interaction)
+- `scripts/train.py`: \[legacy\] Train a model (used primarily for offline training without environment interaction)
 - `scripts/goal_train.py`: Train a model with a policy and a goal policy (used primarily when online rollouts are needed to evaluate different checkpoints during training)
 - `scripts/resolve.py`: Resolve the configuration module, and print out the resulting parameters
 - `scripts/tests/load_batches.py`: Load a dataset module and load batches while timing things, as a way to debug dataset loading.
 - `scripts/eval.py`: Evaluate a model and policy in an environment.
-- - `scripts/collect.py`: Evaluate a model and policy in an environment, and also save it to dataset.
+- `scripts/collect.py`: Evaluate a model and policy in an environment, and also save it to dataset.
+- `scripts/interactive_collect.py`: Evaluate a model and policy in an environment, with a pygame window that lets you control which episode to keep, when to reset, etc
 
 Each of these starts with a similar header:
 ```python
@@ -112,3 +120,23 @@ params, root = load_base_config(local_args.config, unknown)
 exp_name = root.get_exp_name()
 ```
 
+First we load local arguments for the script, then we load the config tree (see `configs/README.md`), and then we get an experiment name from the root config node.
+Usually following this you can use the `params` AttrDict to instantiate any groups that are needed for the script. `params` will take the form of:
+```python
+from attrdict import AttrDict as d
+export = d(
+   global_arg1=1,
+   ...,
+   group1=d(
+      cls=...,
+      arg1=True,
+      ...
+   ),
+   group2=d(
+      cls=...,
+      arg2_1=10,
+      ...
+   ),
+   ...,
+)
+```

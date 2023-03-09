@@ -53,9 +53,6 @@ LOW_JOINTS = np.array([-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.
 HIGH_JOINTS = np.array([2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973])
 
 
-# fmt: on
-
-
 class PolymetisPandaEnv(Env, VRInterface):
     def __init__(self, params, env_spec):
         """
