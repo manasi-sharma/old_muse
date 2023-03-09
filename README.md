@@ -6,12 +6,12 @@ A flexible and modular code base for machine learning, with a focus in robotics.
 
 The code in this repo is mostly python, and is easily pip installable.
 
-1. Create conda environment.
+1. Create conda environment (python 3.10)
 2. Install dependencies (a partial list is found under `requirements.txt`)
 3. `pip install -e <MUSE_ROOT>` to setup the package, which installs three packages
-   1. `muse`: includes all source code
-   2. `configs`: Configuration module (`configs/README.md`).
-   3. `cfgs`: static configuration files for quick use.
+   1. `muse`: includes all source code (`muse/README.md`)
+   2. `configs`: Configuration module and programmatic config files (`configs/README.md`).
+   3. `cfgs`: declarative config files for quick use.
 4. Under root, download and unzip assets using: `gdown https://drive.google.com/uc?id=<FILE ON DRIVE>`
    1. latest: June 2022: `FILE_ID = 1TR0ph1uUmtWFYJr8B0yo1hASjj0cP8fc`
 5. Create several additional directories in the root:
@@ -25,14 +25,16 @@ All set up!
 ## Design Overview
 Here we give an overview of the design philosophy for this repository. [TODO] Submodules will have further explanations that go into greater detail.
 
-The components are:
+The components of `muse` are:
 - **Datasets**: read / write access to data, and data statistics.
 - **Models**: These hold all _parameters_, e.g, neural network weights. They also define `forward()` and `loss()` functions for training.
 - **Policies**: These operate on a model and inputs to produce an "action" to be applied in the environment.
 - **Environments**: Step-able, reset-able, gym-like format, where step(action) uses the output of the policy.
 - **Metrics**: Things that will take inputs/outputs, and compute some tensor, e.g. representing a "loss", supporting group_by operations.
 - **Rewards**: Similar to metrics, but compute a single value representing a reward potentially using the model too, and this can object be reset. 
-- **Trainers**: Compose datasets, models, policies, environments, metrics, and rewards (optional) together into a training algorithm. Native tensorboard writing.
+- **Trainers**: Compose datasets, models, policies, environments, metrics, and rewards (optional) together into a training algorithm. Native wandb or tensorboard writing.
+
+Further details and an example of collecting data and training BC-RNN from vision is outlined in `muse/README.md`.
 
 ### AttrDict
 We use the `attr-dicts` package, which implements nested dictionaries that are easy to access, filter, combine, and write to. 

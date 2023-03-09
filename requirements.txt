@@ -18,6 +18,7 @@ sharedmem
 opencv-python
 gdown
 tensorboard
+wandb
 binpacking
 cloudpickle
 pygame
