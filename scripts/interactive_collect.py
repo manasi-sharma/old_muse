@@ -6,7 +6,7 @@ import sys
 
 from attrdict import AttrDict as d
 
-from collect import rollout, parse_history
+from collect import rollout, parse_history, save
 from configs.helpers import get_script_parser, load_base_config
 from muse.datasets.np_dataset import NpDataset
 from muse.experiments import logger
@@ -27,6 +27,11 @@ if __name__ == '__main__':
                         help='if max_steps is not None, will use whatever is smaller (2*max_steps) or this')
     parser.add_argument('--model_file', type=str, default="model.pt")
     parser.add_argument('--save_file', type=str, required=True)
+    parser.add_argument('--save_episodic', action='store_true',
+                        help='Save each episode in its own file')
+    parser.add_argument('--save_start_ep', type=int, default=0,
+                        help='If saving episodic, this is the start offset for saving '
+                             '(e.g., if you resumed after stopping)')
     parser.add_argument('--dataset_save_group', type=str, default=None)
     parser.add_argument('--no_model_file', action="store_true")
     parser.add_argument('--random_policy', action="store_true")
@@ -172,22 +177,23 @@ if __name__ == '__main__':
         populate_display("'r' to reset and 'q' to quit")
         obs_history, goal_history, ac_history = rollout(args, policy, env, model, obs, goal,
                                                         early_terminate_fn=early_terminate_fn)
-        print(timeit)
-
-        step += len(obs_history) - 1
-        ep += 1
-
-        inputs, outputs = parse_history(env_spec, obs_history, goal_history, ac_history)
-
-        # actually add to dataset
-        dataset_save.add_episode(inputs, outputs)
 
         # UI reset fn with the extra reset function that will ask if we should save or not
         obs, goal = env.user_input_reset(input_handle, reset_action_fn=extra_reset_fn)
         policy.reset_policy(next_obs=obs, next_goal=goal)
 
         if do_save:
+            # parse history if we are saving
+            inputs, outputs = parse_history(env_spec, obs_history, goal_history, ac_history)
+
+            # actually increment and add to dataset only if we are saving
+            step += len(obs_history) - 1
+            ep += 1
+            dataset_save.add_episode(inputs, outputs)
+
             logger.warn(f"[{step}] Saving data after {ep} episodes, data len = {len(dataset_save)}")
-            dataset_save.save()
+            # save either whole dataset or each individually
+            save(dataset_save, start_offset=args.save_start_ep,
+                 first_to_save_ep=ep - 1, save_chunks=args.save_episodic)
 
     logger.info(f"[{step}] Done after {ep} episodes. Final data len = {len(dataset_save)}")

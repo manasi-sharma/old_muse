@@ -132,6 +132,52 @@ def parse_history(spec, local_obs_history, local_goal_history, local_ac_history)
     return local_inputs, local_outputs
 
 
+def save(dataset, start_offset=0, first_to_save_ep=None, save_chunks=False):
+    """
+    Saves to a dataset, optionally in chunks, to the dataset's output file
+
+    If saving in chunks, will add a suffix to the output file name with the current chunk range.
+    For example if start_offset=4, first_to_save_ep=2, and the dataset has 4 episodes, and output_file=dataset.npz,
+     this will save to:
+        dataset_ep6-7.npz
+
+    Parameters
+    ----------
+    dataset
+    start_offset: int
+        if saving chunks, which episode to start from (e.g. num episodes saved before starting this script)
+    first_to_save_ep: int
+        if saving chunks, which episode to start saving in the dataset enumeration
+    save_chunks: bool
+        if True, will save from [ first_to_save_ep, dataset.get_num_episodes() )
+            using a suffix to the dataset file for this range (e.g. for chunk 0 -> 2, suffix="_ep0-2")
+        else will save all episodes.
+
+    Returns
+    -------
+    episodes: int
+        The next "first_to_save_ep" value, where to start saving from next time.
+
+    """
+    episodes = dataset.get_num_episodes()
+
+    if save_chunks:
+        assert first_to_save_ep is not None, "Must pass in value for first_to_save_ep to save()!"
+        if first_to_save_ep == episodes - 1:
+            # single episode
+            suffix = f'_ep{start_offset + first_to_save_ep}'
+        elif first_to_save_ep < episodes - 1:
+            suffix = f'_ep{start_offset + first_to_save_ep}-{start_offset + episodes - 1}'
+        else:
+            raise NotImplementedError('first_save should always be less than episodes.')
+        # [inclusive, exclusive)
+        dataset.save(suffix=suffix, ep_range=(first_to_save_ep, episodes))
+        return episodes
+    else:
+        dataset.save()
+        return episodes
+
+
 if __name__ == '__main__':
     # things we can use from command line
     parser = get_script_parser()
@@ -143,6 +189,11 @@ if __name__ == '__main__':
     parser.add_argument('--model_file', type=str, default="model.pt")
     parser.add_argument('--save_file', type=str, required=True)
     parser.add_argument('--save_every_n_episodes', type=int, default=0, help='Set to nonzero to save')
+    parser.add_argument('--save_chunks', action='store_true',
+                        help='Save each group of {save_every_n_episodes} in their own file')
+    parser.add_argument('--save_start_ep', type=int, default=0,
+                        help='If saving chunks, this is the start offset for saving '
+                             '(e.g., if you resumed after stopping)')
     parser.add_argument('--dataset_save_group', type=str, default=None)
     parser.add_argument('--no_model_file', action="store_true")
     parser.add_argument('--random_policy', action="store_true")
@@ -195,7 +246,7 @@ if __name__ == '__main__':
         ds.file = None
         ds.output_file = args.save_file
 
-    # instantiate the
+    # instantiate the dataset
     dataset_save = ds.cls(ds, env_spec, file_manager)
 
     # restore model from file (if provided)
@@ -209,6 +260,7 @@ if __name__ == '__main__':
     step = 0
     ep = 0
     last_save = None
+    first_to_save_ep = 0
     while not terminate_fn(step, ep):
         logger.info(f"[{step}] Rolling out episode {ep}...")
 
@@ -227,14 +279,17 @@ if __name__ == '__main__':
 
         if is_next_cycle(ep, args.save_every_n_episodes):
             logger.warn(f"[{step}] Saving data after {ep} episodes, data len = {len(dataset_save)}")
-            dataset_save.save()
+            # save to dataset (optionally in chunks)
+            first_to_save_ep = save(dataset_save, start_offset=args.save_start_ep,
+                                    first_to_save_ep=first_to_save_ep, save_chunks=args.save_chunks)
             last_save = step
 
     logger.info(f"[{step}] Terminating after {ep} episodes. Final data len = {len(dataset_save)}")
 
-    # save one last time if there's new stuff and we are supposed to save.
-    if last_save != step and step > 0 and args.save_every_n_episodes > 0:
+    # save one last time if there's new stuff and we are supposed to save
+    if not last_save != step and step > 0 and args.save_every_n_episodes > 0:
         logger.warn("Saving final data...")
-        dataset_save.save()
+        save(dataset_save, start_offset=args.save_start_ep,
+             first_to_save_ep=first_to_save_ep, save_chunks=args.save_chunks)
 
     logger.info("Done.")
