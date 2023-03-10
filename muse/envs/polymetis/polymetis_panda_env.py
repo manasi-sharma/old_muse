@@ -38,6 +38,7 @@ HOMES = {
     "default": [0.0, -np.pi / 4.0, 0.0, -3.0 * np.pi / 4.0, 0.0, np.pi / 2.0, np.pi / 4.0],
     "lower": [0.0, -np.pi / 4.0, 0.0, -3.0 * np.pi / 4.0 - np.pi / 8, 0.0, np.pi / 2.0 + np.pi / 8, np.pi / 4.0],
     "default_90": [0.0, -np.pi / 4.0, 0.0, -3.0 * np.pi / 4.0, 0.0, np.pi / 2.0, -np.pi / 4.0],
+    "default_m90": [0.0, -np.pi / 4.0, 0.0, -3.0 * np.pi / 4.0, 0.0, np.pi / 2.0, 3 * np.pi / 4.0],
 }
 
 # Libfranka Constants

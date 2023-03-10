@@ -4,7 +4,8 @@ from cfgs.dataset import np_img_base_seq
 from cfgs.env import polymetis_panda
 from cfgs.model import vis_bc_rnn
 
-from cfgs.trainer import real_trainer, real_goal_trainer
+#from cfgs.trainer import real_trainer, real_goal_trainer
+from cfgs.trainer import real_goal_trainer
 from configs.fields import Field as F
 from muse.envs.polymetis.polymetis_utils import get_polymetis_online_action_postproc_fn
 from muse.policies.basic_policy import BasicPolicy

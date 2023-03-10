@@ -371,7 +371,7 @@ class GroupStruct:
 
             self.cls = self.params << 'cls'
 
-        elif issubclass(self.source, ConfigNode):
+        elif self.source and issubclass(self.source, ConfigNode):
             # source specifies some sub class of ConfigNode
             self.config_cls = self.source
         else:
