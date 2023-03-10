@@ -117,7 +117,9 @@ class VRPoseTeleopPolicy(Policy):
 
         # TODO TESTING
         self.reader = get_or_instantiate_cls(self._params, "reader", OculusReader,
-                                             constructor=lambda cls, prms: cls(**prms.as_dict()))
+                                             constructor=lambda cls, prms: cls(**prms
+                                                                               .leaf_filter(lambda k, v: k != 'cls')
+                                                                               .as_dict()))
 
         self.hand_origin = AttrDict.from_dict({'pos': None, 'quat': None})
         self.vr_origin = AttrDict.from_dict({'pos': None, 'quat': None})

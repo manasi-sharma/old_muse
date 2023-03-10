@@ -43,6 +43,5 @@ export = d(
     oculus_to_robot_mat_4d=F('yaw', lambda x: get_oculus_to_robot(x)),
     reader=d(
         cls=OculusReader,
-        params=d(),
     ),
 )

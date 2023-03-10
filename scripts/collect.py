@@ -145,7 +145,17 @@ def save(dataset, start_offset=0, first_to_save_ep=None, save_chunks=False):
     ----------
     dataset
     start_offset: int
-        if saving chunks, which episode to start from (e.g. num episodes saved before starting this script)
+
+    latest: June 2022: FILE_ID = 1TR0ph1uUmtWFYJr8B0yo1hASjj0cP8fc
+
+Create several additional directories in the root:
+
+    data/: This will store all the data
+    experiments/: This is where runs will log and write models to.
+    plots/: (optional)
+    videos/: (optional)
+
+sode to start from (e.g. num episodes saved before starting this script)
     first_to_save_ep: int
         if saving chunks, which episode to start saving in the dataset enumeration
     save_chunks: bool
@@ -186,7 +196,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_eps', type=int, default=None)
     parser.add_argument('--capacity', type=int, default=1e6,
                         help='if max_steps is not None, will use whatever is smaller (2*max_steps) or this')
-    parser.add_argument('--model_file', type=str, default="model.pt")
+    parser.add_argument('--model_file', type=str, default=None)
     parser.add_argument('--save_file', type=str, required=True)
     parser.add_argument('--save_every_n_episodes', type=int, default=0, help='Set to nonzero to save')
     parser.add_argument('--save_chunks', action='store_true',

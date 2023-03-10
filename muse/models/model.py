@@ -33,6 +33,7 @@ class Model(torch.nn.Module, BaseClass):
             self._device = None
             self._preproc_fn = lambda inps: inps
             self._postproc_fn = lambda inps, outs: inps
+            self.metrics = []
         else:
             device = params["device"]
             if "cuda" not in str(device) or torch.cuda.is_available():

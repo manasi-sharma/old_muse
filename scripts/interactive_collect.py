@@ -25,7 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_eps', type=int, default=None)
     parser.add_argument('--capacity', type=int, default=1e6,
                         help='if max_steps is not None, will use whatever is smaller (2*max_steps) or this')
-    parser.add_argument('--model_file', type=str, default="model.pt")
+    parser.add_argument('--model_file', type=str, default=None)
     parser.add_argument('--save_file', type=str, required=True)
     parser.add_argument('--save_episodic', action='store_true',
                         help='Save each episode in its own file')
