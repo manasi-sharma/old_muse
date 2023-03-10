@@ -13,6 +13,7 @@ from scipy.spatial.transform import Rotation as R
 
 EPS = np.finfo(np.float32).eps * 4.
 
+
 def get_normalized_quat(pose):
     if pose.shape[-1] in [7, 8, 10, 11]:
         q = pose[..., 3:7]
@@ -22,6 +23,7 @@ def get_normalized_quat(pose):
         raise NotImplementedError(str(pose.shape))
 
     return q / np.linalg.norm(q, axis=-1, keepdims=True)
+
 
 def convert_quat(q, to="xyzw"):
     """

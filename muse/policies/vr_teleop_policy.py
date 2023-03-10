@@ -23,10 +23,11 @@ from muse.utils.transform_utils import quat2mat, mat2quat, euler2mat, quat_diffe
     quat2euler, quat2axisangle, axisangle2quat, fast_euler2quat
 
 from attrdict import AttrDict
-from attrdict.utils import get_with_default, get_cls_param_instance
+from attrdict.utils import get_with_default, get_or_instantiate_cls
 
 
 controller_off_message = '\n\nATTENTION: Controller is off! Press enter when you have turned it back on :)'
+
 
 class VRPoseTeleopPolicy(Policy):
     """README
@@ -47,7 +48,6 @@ class VRPoseTeleopPolicy(Policy):
         self.action_name = get_with_default(params, "action_name", "action")  # this will be the pose (euler)
         self.gripper_pos_name = get_with_default(params, "gripper_pos_name", "gripper_pos")
         self.gripper_tip_pos_name = get_with_default(params, "gripper_tip_pos_name", "gripper_tip_pos")
-
 
         self.use_click_state = get_with_default(params, "use_click_state", False)  # remaps B -> mode label
 
@@ -110,7 +110,7 @@ class VRPoseTeleopPolicy(Policy):
         self.initial_pose = None
         self._done = False
 
-        self._step = 0  # TODO TESTING
+        self._step = 0
 
     def _init_setup(self):
         super(VRPoseTeleopPolicy, self)._init_setup()
@@ -192,7 +192,6 @@ class VRPoseTeleopPolicy(Policy):
 
         # Read Observation
         robot_pose, curr_gripper, curr_gripper_tip_pose = self._read_observation(observation)
-
 
         if self.sticky_gripper:
             #print(curr_gripper.item(), self._gripper_max)
