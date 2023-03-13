@@ -16,7 +16,8 @@ try:
     os.environ["LD_LIBRARY_PATH"] = os.getcwd()  # or whatever path you want
     import hid
 except ModuleNotFoundError as exc:
-    raise ImportError("Unable to load module hid, required to interface with SpaceMouse. ") from exc
+    raise ImportError("Unable to load module hid, required to interface with SpaceMouse. \n"
+                      "Installation: https://ut-austin-rpl.github.io/deoxys-docs/html/tutorials/using_teleoperation_devices.html?highlight=spacemouse") from exc
 
 
 AxisSpec = namedtuple("AxisSpec", ["channel", "byte1", "byte2", "scale"])
@@ -85,6 +86,8 @@ class SpaceMouseInterface:
         product_id (int): HID device product id
         pos_sensitivity (float): Magnitude of input position command scaling
         rot_sensitivity (float): Magnitude of scale input rotation commands scaling
+
+    See https://ut-austin-rpl.github.io/deoxys-docs/html/tutorials/using_teleoperation_devices.html?highlight=spacemouse
     """
 
     def __init__(self, vendor_id=9583, product_id=50734, pos_sensitivity=1.0, rot_sensitivity=2.0, action_scale=0.08):

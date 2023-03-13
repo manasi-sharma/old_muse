@@ -41,6 +41,32 @@ We use the `attr-dicts` package, which implements nested dictionaries that are e
 Most classes accept AttrDict's rather than individual parameters for initialization, and often for methods as well.
 See here for greater detail about working with AttrDicts: https://github.com/Stanford-ILIAD/attrdict
 
+### muse.utils.abstract
+Here we define an `Argument`, which classes that derive from `BaseClass` can use to declare arguments that will automatically be parsed to command line by the `configs` module, even if the argument is not present in the config.
+This `Argument` class resembles `argparse` arguments in syntax / instantiation. 
+For a class `ExampleClass` that derives from `BaseClass`, we can set arguments in the class definition as follows:
+```python
+from muse.utils.abstract import BaseClass, Argument
+class ExampleClass(BaseClass):
+    # declare the parameters
+    predefined_arguments = [
+       Argument('batch_size', type=int, default=100),
+       Argument('horizon', type=int, default=10),
+    ]
+    
+    def __init(self, params):
+        # read the parameters into self, allowing access from self.<param_name>
+        self.read_predefined_params(params)
+```
+
+Now, any `config` params (i.e., `configs.config_node.ConfigNode`) where `cls=ExampleClass` will automatically add the arguments `batch_size` and `horizon` to the command line parser.
+By calling `read_predefined_params` with `AttrDict` params, we can automatically parse the given arguments with their defaults into class fields.
+For example, above, we can refer to `self.batch_size` and `self.horizon` for the rest of the code.
+
+More details about overriding argument defaults and specifying values through the config can be found in `configs/README.md`.
+Note that not all classes support or use this style of argument specification, and it is completely optional.
+A good example of using these arguments can be found in the `muse.models.bc` module (e.g. `gcbc.py`).
+
 ### muse.datasets
 Datasets implement various storage and reading mechanisms. 
 `muse.datasets.NpDataset` is the one used for most things. `muse.datasets.Hdf5Dataset` is implemented and tested but should rarely be used, since it is often slower (without in-memory caching).
