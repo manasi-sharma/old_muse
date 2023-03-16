@@ -4,7 +4,7 @@ from attrdict import AttrDict as d
 
 export = d(
     cls=RNN_GCBC,
-    exp_name='_bc_{rnn_type}-hs{hidden_size}-ps{policy_size}',
+    exp_name='_bcTEST_{rnn_type}-hs{hidden_size}-ps{policy_size}',
     use_goal=False,
     use_final_goal=False,
     normalize_states=False,

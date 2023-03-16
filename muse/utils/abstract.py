@@ -127,8 +127,19 @@ class Argument:
 
 
 def resolve_arguments(*classes):
-    # will remove duplicate arguments (by instance, not by name)
-    # will error if names conflict but instances aren't the same
+    """
+    Will remove duplicate arguments (by instance, not by name)
+    Will error if names conflict but instances aren't the same
+
+    Parameters
+    ----------
+    classes: List[type]
+        the classes to deduplicate, using the first argument of each duplicate (by order)
+
+    Returns
+    -------
+
+    """
     arguments = []
     corr_names = []
     corr_classes = []

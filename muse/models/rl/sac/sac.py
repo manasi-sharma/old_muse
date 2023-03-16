@@ -414,30 +414,3 @@ class SACModel(Model):
             return outputs.leaf_apply(get_zeroth_horizon)
 
         return forward_fn
-
-    def print_parameters(self, prefix="", print_fn=logger.debug):
-        print_fn(prefix + "[SAC]")
-        for p in self.parameters(recurse=False):
-            print_fn(prefix + "[SAC] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-
-        if hasattr(self.actor, "print_parameters"):
-            print_fn(prefix + "\t[Actor]")
-            self.actor.print_parameters(prefix=prefix + "\t\t", print_fn=print_fn)
-        else:
-            for p in self.actor.parameters():
-                print_fn(prefix + "\t\t[Actor] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-
-        if hasattr(self.critic, "print_parameters"):
-            print_fn(prefix + "\t[Critic]")
-            self.critic.print_parameters(prefix=prefix + "\t\t", print_fn=print_fn)
-        else:
-            for p in self.critic.parameters():
-                print_fn(prefix + "\t\t[Critic] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-
-        if hasattr(self.critic_target, "print_parameters"):
-            print_fn(prefix + "\t[CriticTarget]")
-            self.critic_target.print_parameters(prefix=prefix + "\t\t", print_fn=print_fn)
-        else:
-            for p in self.critic_target.parameters():
-                print_fn(
-                    prefix + "\t\t[CriticTarget] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))

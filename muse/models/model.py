@@ -35,14 +35,14 @@ class Model(torch.nn.Module, BaseClass):
             self._postproc_fn = lambda inps, outs: inps
             self.metrics = []
         else:
-            device = params["device"]
-            if "cuda" not in str(device) or torch.cuda.is_available():
+            device = params << "device"
+            if device and ("cuda" not in str(device) or torch.cuda.is_available()):
                 self._device = torch.device(device)
             else:
                 self._device = torch.device("cpu")
 
             # TODO logger
-            logger.debug("Model using device: {}".format(self._device))
+            logger.debug("Model initialized with device: {}".format(self._device))
 
             keys = list(params.leaf_keys())
             # first thing called in model forward (inputs) -> new_inputs
@@ -78,10 +78,12 @@ class Model(torch.nn.Module, BaseClass):
             # this metric is used as the loss (default is a sum over all keys)
             self.metric_agg_fn = get_with_default(params, "metric_agg_fn", lambda ms: ms.leaf_reduce(sum))
 
-            # can be overriden, should be all the names you might want to use (especially important to reduce param size)
+            # can be overriden, should be all the names you might want to use (esp important to reduce param size)
             self.normalize_inputs = params.get("normalize_inputs", False)
-            self.default_normalize_sigma = get_with_default(params, "default_normalize_sigma", 1.)  # number of standard deviations to include in normalization (-normalize_sigma*std, normalize_sigma*std)
-            self.do_minmax_norm = params.get("do_minmax_norm", False)  # TODO if true, will normalize to be -1 to 1 with min and max in dataset.
+            # number of standard deviations to include in normalization (-normalize_sigma*std, normalize_sigma*std)
+            self.default_normalize_sigma = get_with_default(params, "default_normalize_sigma", 1.)
+            # TODO if true, will normalize to be -1 to 1 with min and max in dataset.
+            self.do_minmax_norm = params.get("do_minmax_norm", False)
 
             if self.default_normalize_sigma != 1.:
                 logger.debug(f'Normalize sigma = {self.default_normalize_sigma}')
@@ -95,15 +97,16 @@ class Model(torch.nn.Module, BaseClass):
                                                               self.normalization_inputs)
             # these names will store the MAX std across the dimension, not one per axis.
             self.max_std_normalization_inputs = get_with_default(params, "max_std_normalization_inputs", [])
+
+            self._init_params_to_attrs(params)
+            self._init_setup()
+
             assert set(self.max_std_normalization_inputs).issubset(self.save_normalization_inputs), [self.max_std_normalization_inputs, self.save_normalization_inputs]
             assert set(self.normalization_inputs).issubset(self.save_normalization_inputs), \
                 f"{self.normalization_inputs} must be a subset of save names: {self.save_normalization_inputs}"
 
             if len(self.max_std_normalization_inputs) > 0:
                 logger.debug(f"Will use maximum std for these keys: {self.max_std_normalization_inputs}")
-
-            self._init_params_to_attrs(params)
-            self._init_setup()
 
             if env_spec is not None:
                 # means 'n stds
@@ -150,13 +153,49 @@ class Model(torch.nn.Module, BaseClass):
         pass
 
     def normalize_by_statistics(self, inputs: AttrDict, names, shared_dtype=None, check_finite=True, inverse=False,
-                                shift_mean=True, normalize_sigma=None):
-        # TODO case where inputs come from CAttrDict
+                                shift_mean=True, normalize_sigma=None, required=True):
+        """
+        Normalizes a set of input names by mu / sigma.
+
+        Parameters
+        ----------
+        inputs: AttrDict
+        names: List[str]
+            names to normalize within inputs
+        shared_dtype: torch.dtype or None
+            if not None, convert all normalized names to this
+        check_finite: bool
+            if True, replace infinite entries after normalization with original value.
+        inverse: bool
+            if True, unnormalize
+        shift_mean:
+            shift input by mu
+        normalize_sigma: float or None
+            how many STD's to normalize to, default 1
+        required: bool
+            if True, all names must be present to normalize
+            else it normalizes and returns found subset of names
+
+        Returns
+        -------
+        normalized_inputs: AttrDict
+        normalized_names: List[str] or None
+            if required=False, subset of names that were found
+
+        """
         normalize_sigma = self.default_normalize_sigma if normalize_sigma is None else normalize_sigma
-        assert inputs.has_leaf_keys(names), list(set(names).difference(inputs.list_leaf_keys()))
+
+        if required:
+            found_names = names
+        else:
+            found_names = list(set(self.torch_means.keys()).intersection(names))
+
+        assert inputs.has_leaf_keys(found_names), list(set(found_names).difference(inputs.list_leaf_keys()))
+
         inputs = inputs.leaf_copy()
-        for name in names:
-            assert name in self.torch_means.keys(), [name, names, self.torch_means.keys()]
+
+        for name in found_names:
+            assert name in self.torch_means.keys(), [name, found_names, self.torch_means.keys()]
             # print(name)
             if shared_dtype is not None:
                 inputs[name] = inputs[name].to(dtype=shared_dtype)  # TODO
@@ -177,9 +216,26 @@ class Model(torch.nn.Module, BaseClass):
                                            inputs[name])  # do not keep NaN std's, this is bad
             else:
                 inputs[name] = normalized
+
+        if not required:
+            return inputs, found_names
+
         return inputs
 
     def load_statistics(self, dd=None):
+        """
+        Load statistics from dataset (self._dataset_train)
+
+        Parameters
+        ----------
+        dd: AttrDict
+            already computed statistics.
+
+        Returns
+        -------
+        dd: AttrDict
+
+        """
         logger.debug(f"[{type(self)}] Loading statistics for model's dataset")
         if self._ignore_inputs or len(self.save_normalization_inputs) == 0:
             logger.warn(f"[{type(self)}] No stats loaded for model!")
@@ -283,7 +339,7 @@ class Model(torch.nn.Module, BaseClass):
         return self._env_spec
 
     def _init_params_to_attrs(self, params):
-        pass
+        self.read_predefined_params(params)
 
     def _init_setup(self):
         pass
@@ -291,15 +347,19 @@ class Model(torch.nn.Module, BaseClass):
     def warm_start(self, model, observation, goal):
         pass
 
-    def forward(self, inputs, training=False, preproc=True, postproc=True, **kwargs):
+    def forward(self, inputs, preproc=True, postproc=True, **kwargs):
         """
         :param inputs: (AttrDict)  (B x ...)
-        :param training: (bool)
         :param preproc: (bool) run preprocess fn
         :param postproc: (bool) run postprocess fn
 
         :return model_outputs: (AttrDict)  (B x ...)
         """
+        inputs = inputs.leaf_copy()
+
+        if self.normalize_inputs:
+            inputs = self.normalize_by_statistics(inputs, self.normalization_inputs)
+
         return inputs
 
     # override this if you want your own loss
@@ -356,10 +416,32 @@ class Model(torch.nn.Module, BaseClass):
 
     def train_step(self, inputs, outputs, i=0, writer=None, writer_prefix="", ret_dict=False, optimizer=None, **kwargs):
         # if you override this, make sure to set implements_train_step=True for Trainer to know
-        raise NotImplementedError
+        logger.warn("Train Step not implemented but was called...")
 
     def restore_from_checkpoint(self, checkpoint, strict=False):
         self.load_state_dict(checkpoint['model'], strict=strict)
 
     def restore_from_file(self, fname, strict=False):
         self.restore_from_checkpoint(torch.load(fname, map_location=self.device), strict=strict)
+
+    def parse_kwargs_for_method(self, method, kwargs):
+        """
+        Parse the kwargs passed into a broad function (e.g. forward) for a given method called within that function
+
+        Looks for {method.lower()}_parsed_kwargs to be a class level dictionary of keys mapping to defaults.
+
+        Parameters
+        ----------
+        method: method name
+        kwargs: the full kwargs to parse from
+
+        Returns
+        -------
+        inner_kwargs: the kwargs for method
+
+        """
+        inner_kwargs = getattr(self, f"{method.lower()}_parsed_kwargs").copy()
+        intersection_keys = set(kwargs.keys()).intersection(inner_kwargs.keys())
+        for key in intersection_keys:
+            inner_kwargs[key] = kwargs[key]
+        return inner_kwargs

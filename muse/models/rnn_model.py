@@ -1,19 +1,3 @@
-"""
-Structure is customizeable, but basically:
-
-*if rnn_before_network = True*
-
-inputs ---> recurrent_network     ---->   network  ---> output
-        |                           |
-        ->         parallel_model --                 -> non_recurrent_output
-
-*else*
-
-inputs --->  network  --->  recurrent_network   ---->  output
-        |                                       |
-         --->      parallel_model           ----  ->  non_recurrent_output
-
-"""
 from collections.abc import Callable
 
 import torch
@@ -25,11 +9,27 @@ from muse.utils.param_utils import LayerParams
 from muse.utils.general_utils import timeit, is_next_cycle
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
-from muse.utils.torch_utils import concatenate
+from muse.utils.torch_utils import concatenate, combine_after_dim
 
 
 # 1 input, split into N outputs via a split function
 class RnnModel(BasicModel):
+    """
+    Structure is customizeable, but basically:
+
+    *if rnn_before_network = True*
+
+    inputs ---> recurrent_network     ---->   network  ---> output
+            |                           |
+            ->         parallel_model --                 -> non_recurrent_output
+
+    *else*
+
+    inputs --->  network  --->  recurrent_network   ---->  output
+            |                                       |
+             --->      parallel_model           ----  ->  non_recurrent_output
+
+    """
 
     # @abstract.overrides
     def _init_params_to_attrs(self, params):
@@ -128,6 +128,11 @@ class RnnModel(BasicModel):
         if preproc:
             inputs = self._preproc_fn(inputs)
 
+        # move to torch and reshape to be concatenate-able
+        for key in self.inputs:
+            inputs[key] = inputs[key].to(dtype=self.concat_dtype)
+            inputs[key] = combine_after_dim(inputs[key], self.concat_dim)
+
         # likely, B x H x ...
         # a sequence of inputs.
         obs = concatenate(inputs, self.inputs, dim=self.concat_dim)
@@ -163,20 +168,6 @@ class RnnModel(BasicModel):
             # print(rnn_out.shape)
 
         return self._postproc_fn(inputs, outputs) if postproc else outputs
-
-    def print_parameters(self, prefix="", print_fn=logger.debug):
-
-        print_fn(prefix + "[RNN]")
-        for k, p in self.torch_means.items():
-            print_fn(prefix + "[RNN means] %s: <%s> (requires_grad = %s" % (k, list(p.shape), p.requires_grad))
-        for k, p in self.torch_stds.items():
-            print_fn(prefix + "[RNN stds]  %s: <%s> (requires_grad = %s" % (k, list(p.shape), p.requires_grad))
-        if self.parallel_model is not None:
-            self.parallel_model.print_parameters(prefix=prefix + "[RNN Parallel]", print_fn=print_fn)
-        for p in self.net.parameters():
-            print_fn(prefix + "[RNN non-recurrent] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-        for p in self.recurrent_net.parameters():
-            print_fn(prefix + "[RNN recurrent] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
 
     @staticmethod
     def get_default_mem_policy_forward_fn(*args, add_goals_in_hor=False, flush_horizon=0, **kwargs):
@@ -228,7 +219,6 @@ class RnnModel(BasicModel):
             out = base_model.forward(obs, rnn_hidden_init=memory["policy_rnn_h0"], parallel_kwargs=pkwargs,
                                      **inner_kwargs)
             # NEXT OUTPUT
-
             submodel_apply(model, memory, lambda mod, mem: setattr(mem, 'policy_rnn_h0', out[mod.hidden_name]))
 
             # default online postproc defined in BasicModel (parent class)

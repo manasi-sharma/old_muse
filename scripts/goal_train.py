@@ -19,6 +19,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_datasets', type=int, default=1)
     parser.add_argument('--model_dataset_idx', type=int, default=-1)
     parser.add_argument('--run_async', action='store_true')
+    parser.add_argument('--no_wandb', action='store_true')
     parser.add_argument('--wandb_project', type=str, default='muse')
     local_args, unknown = parser.parse_known_args()
 
@@ -79,10 +80,11 @@ if __name__ == '__main__':
 
     reward = params.reward.cls(params.reward, env_spec) if params.has_leaf_key("reward/cls") else None
 
-    # writer
-    # writer = None
-    writer = WandbWriter(exp_name, AttrDict(project_name=local_args.wandb_project, config=params.as_dict()),
-                         file_manager, resume=getattr(local_args, 'continue'))
+    if local_args.no_wandb:
+        writer = None  # tensorboard
+    else:
+        writer = WandbWriter(exp_name, AttrDict(project_name=local_args.wandb_project, config=params.as_dict()),
+                             file_manager, resume=getattr(local_args, 'continue'))
 
     # trainer
     trainer = params.trainer.cls(params.trainer,

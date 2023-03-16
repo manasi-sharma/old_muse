@@ -71,8 +71,6 @@ class LMPGroupedModel(GroupedModel):
     def _init_params_to_attrs(self, params: d):
         super(LMPGroupedModel, self)._init_params_to_attrs(params)
 
-        self.read_predefined_params(params)
-
         # scale term on beta to change, default is 100% of beta
         self.beta_schedule = 1.
 

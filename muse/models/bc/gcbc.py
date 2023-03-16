@@ -24,6 +24,7 @@ from muse.utils.general_utils import timeit
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default, get_or_instantiate_cls
 
+
 class BaseGCBC(Model):
     """
     GCBC base class, compatible with vision based or state based inputs.

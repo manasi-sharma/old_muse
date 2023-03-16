@@ -21,12 +21,25 @@ class Spec:
         self._names_to_dtypes = AttrDict()
         self._names = []
         for name, shape, limit, dtype in names_shapes_limits_dtypes:
-            self._names_to_shapes[name] = shape
-            self._names_to_limits[name] = limit
-            self._names_to_dtypes[name] = dtype
-            self._names.append(name)
+            self.add_nsld(name, shape, limit, dtype)
 
         self._init_params_to_attrs(params)
+
+    def add_nsld(self, *args):
+        if len(args) == 4:
+            name, shape, limit, dtype = args
+        elif len(args) == 1:
+            assert len(args[0]) == 4, "Must pass in single tuple or all arguments!"
+            name, shape, limit, dtype = args[0]
+        else:
+            raise NotImplementedError('Pass in 4 args or an iterable of 4 args!')
+
+        assert name not in self._names, f"Name {name} added but was already present!"
+
+        self._names_to_shapes[name] = shape
+        self._names_to_limits[name] = limit
+        self._names_to_dtypes[name] = dtype
+        self._names.append(name)
 
     def _init_params_to_attrs(self, params: AttrDict):
         pass
@@ -219,7 +232,7 @@ class Spec:
         return list(self._names)
 
     @property
-    def names_to_shapes(self):
+    def names_to_shapes(self) -> AttrDict:
         """
         Knowing the dimensions is useful for building neural networks
 
@@ -229,7 +242,7 @@ class Spec:
         return self._names_to_shapes
 
     @property
-    def names_to_limits(self):
+    def names_to_limits(self) -> AttrDict:
         """
         Knowing the limits is useful for normalizing data
 
@@ -239,7 +252,7 @@ class Spec:
         return self._names_to_limits
 
     @property
-    def names_to_dtypes(self):
+    def names_to_dtypes(self) -> AttrDict:
         """
         Knowing the data type is useful for building neural networks and datasets
 

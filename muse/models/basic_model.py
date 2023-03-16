@@ -142,11 +142,6 @@ class BasicModel(Model):
 
         return mem_policy_model_forward_fn
 
-    def print_parameters(self, prefix="", print_fn=logger.debug):
-        print_fn(prefix + "[BasicModel]")
-        for n, p in self.named_parameters():
-            print_fn(prefix + "[BasicModel] %s <%s> (requires_grad = %s)" % (n, list(p.shape), p.requires_grad))
-
 
 if __name__ == '__main__':
     from torch.utils.tensorboard import SummaryWriter

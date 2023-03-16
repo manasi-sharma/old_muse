@@ -295,36 +295,3 @@ class DDPGActorCriticModel(Model):
             outputs = ac_model.forward(observation.leaf_apply(lambda arr: arr[:, 0]), sample=sample_action, **kwargs)
             return outputs
         return forward_fn
-
-    def print_parameters(self, prefix="", print_fn=logger.debug):
-        print_fn(prefix + "[DDPG]")
-        for p in self.parameters(recurse=False):
-            print_fn(prefix + "[DDPG] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-
-        if hasattr(self.actor, "print_parameters"):
-            print_fn(prefix + "\t[Actor]")
-            self.actor.print_parameters(prefix=prefix + "\t\t", print_fn=print_fn)
-        else:
-            for p in self.actor.parameters():
-                print_fn(prefix + "\t\t[Actor] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-
-        if hasattr(self.actor_target, "print_parameters"):
-            print_fn(prefix + "\t[ActorTarget]")
-            self.actor_target.print_parameters(prefix=prefix + "\t\t", print_fn=print_fn)
-        else:
-            for p in self.actor_target.parameters():
-                print_fn(prefix + "\t\t[ActorTarget] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-
-        if hasattr(self.critic, "print_parameters"):
-            print_fn(prefix + "\t[Critic]")
-            self.critic.print_parameters(prefix=prefix + "\t\t", print_fn=print_fn)
-        else:
-            for p in self.critic.parameters():
-                print_fn(prefix + "\t\t[Critic] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))
-
-        if hasattr(self.critic_target, "print_parameters"):
-            print_fn(prefix + "\t[CriticTarget]")
-            self.critic_target.print_parameters(prefix=prefix + "\t\t", print_fn=print_fn)
-        else:
-            for p in self.critic_target.parameters():
-                print_fn(prefix + "\t\t[CriticTarget] param <%s> (requires_grad = %s)" % (list(p.shape), p.requires_grad))

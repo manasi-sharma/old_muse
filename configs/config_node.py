@@ -127,7 +127,7 @@ class ConfigNode:
         local_params, _ = cu.filter_local_and_group_params(node_params)
         for key, item in local_params.leaf_items():
             if isinstance(item, Field):
-                out_d[key] = item.process(key, local_params, global_params)
+                out_d[key] = item.process(key, local_params, global_params, path=self.full_name)
 
         return out_d
 
