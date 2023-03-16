@@ -3,6 +3,7 @@ from attrdict import AttrDict as d
 from muse.grouped_models.grouped_model import GroupedModel
 from muse.models.bc.action_decoders import ActionDecoder
 from muse.utils.abstract import Argument
+from muse.utils.general_utils import timeit
 from muse.utils.torch_utils import broadcast_dims
 
 
@@ -40,8 +41,10 @@ class BaseGCBC(GroupedModel):
         self.state_encoder_order = params["state_encoder_order"]
 
         if self.use_goal:
-            # goals (not prefixed by goal), likely some subset of state names
+            # goals (prefixed by goal), likely some subset of state names
             self.goal_names = params["goal_names"]
+            assert all(g.startswith('goal/') for g in self.goal_names), "Goal states must start with goal/"
+            self.deprefixed_goal_names = [g[5:] for g in self.goal_names]
 
     def _init_setup(self):
         super()._init_setup()
@@ -56,6 +59,8 @@ class BaseGCBC(GroupedModel):
             # for output unnormalization
             self.save_normalization_inputs += self.action_decoder.all_action_names
 
+        self._loss_forward_kwargs['select_goal'] = True
+
     def select_goals(self, inputs):
         """
         Choosing goals
@@ -67,22 +72,27 @@ class BaseGCBC(GroupedModel):
 
         Returns
         -------
-        goals: (B x H x ...)
+        goals: AttrDict
+            (B x H x ...) for name in self.goal_names
 
         """
-        goals = inputs > self.goal_names
+
+        # broadcast to the maximum horizon length element
+        max_horizon = inputs.leaf_reduce(lambda red, arr: max(red, arr.shape[1]), seed=1)
 
         if self.use_last_state_goal:
+            goals = inputs > self.deprefixed_goal_names
             # select the last state as the goal
-            goals.leaf_modify(lambda arr: broadcast_dims(arr[:, -1:], [1], [arr.shape[1]]))
+            goals.leaf_modify(lambda arr: broadcast_dims(arr[:, -1:], [1], [max_horizon]))
+            # re-prefix the goals with goal/
+            goals = d(goal=goals)
         else:
-            # broadcast to the maximum horizon length element
-            max_horizon = inputs.leaf_reduce(lambda red, arr: max(red, arr.shape[1]), seed=1)
+            goals = inputs > self.goal_names
             goals.leaf_modify(lambda arr: broadcast_dims(arr, [1], [max_horizon]))
 
         return goals
 
-    def forward(self, inputs, **kwargs):
+    def forward(self, inputs, select_goal=False, **kwargs):
         """ GCBC call to forward()
 
         NOTE: does not use preproc or postproc actions.
@@ -99,16 +109,21 @@ class BaseGCBC(GroupedModel):
 
         inputs = inputs.leaf_copy()
 
-        # call each encoder forward, and add to inputs
-        for enc_name in self.state_encoder_order:
-            inputs.combine(self[enc_name](inputs))
+        with timeit("gcbc/encoders"):
+            # call each encoder forward, and add to inputs
+            for enc_name in self.state_encoder_order:
+                inputs.combine(self[enc_name](inputs))
 
         # get the goal and add it
         if self.use_goal:
-            inputs.combine(self.select_goals(inputs))
+            if select_goal:
+                inputs.combine(self.select_goals(inputs))
+            else:
+                assert inputs.has_leaf_keys(self.goal_names), "Missing goal names from input!"
 
-        # run the action decoder.
-        outputs = self.action_decoder(inputs)
+        with timeit("gcbc/decoder"):
+            # run the action decoder.
+            outputs = self.action_decoder(inputs, **kwargs)
 
         return inputs & outputs
 

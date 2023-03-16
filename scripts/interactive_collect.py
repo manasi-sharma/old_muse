@@ -150,15 +150,14 @@ if __name__ == '__main__':
     do_save = False
 
     def extra_reset_fn(**kwargs):
-        if ep > 0:
-            # queries the user to save or trash during the reset (after the first one).
-            global do_save
+        # queries the user to save or trash during the reset (after the first one).
+        global do_save
 
-            logger.info("UI: Save [y] or Trash [n]")
-            populate_display('UI: Save [y] or Trash [n]')
-            res = wait_for_keydown_from_set(input_handle, [KI('y', KI.ON.down), KI('n', KI.ON.down)],
-                                            do_async=False)
-            do_save = res.key == 'y'
+        logger.info("UI: Save [y] or Trash [n]")
+        populate_display('UI: Save [y] or Trash [n]')
+        res = wait_for_keydown_from_set(input_handle, [KI('y', KI.ON.down), KI('n', KI.ON.down)],
+                                        do_async=False)
+        do_save = res.key == 'y'
 
     step = 0
     ep = 0
