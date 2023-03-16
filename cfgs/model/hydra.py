@@ -2,11 +2,11 @@ from configs.fields import Field as F
 from muse.models.bc.hydra.hydra_decoder import HydraRNNActionDecoder
 from muse.models.bc.hydra.hydra_gcbc import HydraGCBC
 from muse.models.model import Model
-from muse.utils.loss_utils import get_default_mae_action_loss_fn, mae_err_fn
+from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
 from attrdict import AttrDict as d
 
 export = d(
-    exp_name='_hydra2',
+    exp_name='_hydra-l2',
     cls=HydraGCBC,
     use_goal=False,
     use_last_state_goal=False,
@@ -26,9 +26,10 @@ export = d(
 
     # mode loss functions (normalized sparse)
     mode0_loss_fn=F('sparse_action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x,
-                                                                                    vel_act=False,
+                                                                                    vel_act=False, err_fn=mse_err_fn,
                                                                                     policy_out_norm_names=x)),
     mode1_loss_fn=F('action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x, vel_act=True,
+                                                                             err_fn=mse_err_fn,
                                                                              policy_out_norm_names=[])),
 
     # names

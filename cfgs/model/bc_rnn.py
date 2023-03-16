@@ -1,45 +1,53 @@
-from muse.models.bc.gcbc import RNN_GCBC
-from muse.utils.loss_utils import get_default_mae_action_loss_fn, mae_err_fn
+from configs.fields import Field as F
+from muse.models.bc.action_decoders import RNNActionDecoder
+from muse.models.bc.gcbc import BaseGCBC
+from muse.models.model import Model
+from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
 from attrdict import AttrDict as d
 
+
 export = d(
-    cls=RNN_GCBC,
-    exp_name='_bcTEST_{rnn_type}-hs{hidden_size}-ps{policy_size}',
+    exp_name='_bc-l2',
+    cls=BaseGCBC,
     use_goal=False,
-    use_final_goal=False,
+    use_last_state_goal=False,
+
     normalize_states=False,
-    normalize_actions=False,
-    use_vision_encoder=False,
-    encoder_call_jointly=False,
-    default_img_embed_size=64,
-    default_use_spatial_softmax=False,
-    default_use_crop_randomizer=False,
-    default_use_color_randomizer=False,
-    default_use_erasing_randomizer=False,
-    default_downsample_frac=1.0,
-    crop_frac=0.9,
-    encoder_use_shared_params=False,
-    use_policy_dist=False,
-    policy_num_mix=1,
-    use_policy_dist_mean=False,
-    policy_sig_min=1e-05,
-    policy_sig_max=1000.0,
-    use_tanh_out=True,
-    dropout_p=0,
-    hidden_size=400,
-    policy_size=0,
-    rnn_depth=2,
-    rnn_type='lstm',
-    device='cuda',
-    state_names=['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos', 'object'],
+    save_action_normalization=False,
+
+    # names
     goal_names=['object'],
-    action_names=['action'],
-    raw_out_name='policy_raw',
-    inner_postproc_fn=None,
-    image_keys=[],
+    state_names=['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos', 'object'],
+
+    # encoders
+    state_encoder_order=['proprio_encoder'],
+    proprio_encoder=d(
+        # normalizes and replaces these keys
+        cls=Model,
+        normalize_inputs=F('../normalize_states'),
+        normalization_inputs=F('../state_names'),
+    ),
+
+    model_order=['proprio_encoder', 'action_decoder'],
+    action_decoder=d(
+        exp_name='_{rnn_type}-hs{hidden_size}-ps{policy_size}{?use_policy_dist:-pd}',
+        cls=RNNActionDecoder,
+        input_names=F('../state_names'),
+        action_names=['action'],
+        rnn_type='lstm',
+        use_policy_dist=False,
+        policy_num_mix=1,
+        use_policy_dist_mean=False,
+        policy_sig_min=1e-05,
+        policy_sig_max=1000.0,
+        use_tanh_out=True,
+        policy_sample_cat=False,
+        dropout_p=0,
+        hidden_size=400,
+        policy_size=0,
+        rnn_depth=2,
+    ),
     loss_fn=get_default_mae_action_loss_fn(['action'], max_grab=None,
-                                           err_fn=mae_err_fn, vel_act=True,
+                                           err_fn=mse_err_fn, vel_act=True,
                                            policy_out_norm_names=[]),
-    default_normalize_sigma=1.0,
-    sample_cat=False,
 )
