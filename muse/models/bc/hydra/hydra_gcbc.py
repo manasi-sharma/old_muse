@@ -68,16 +68,16 @@ class HydraGCBC(BaseGCBC):
         with timeit(f'loss/policy_mode0_loss'):
             mode_action_losses.append(
                 self.mode0_loss_fn(self, model_outputs, inputs, outputs, i=i, writer=writer,
-                                   writer_prefix=writer_prefix + f"policy_mode1_loss/",
+                                   writer_prefix=writer_prefix + f"mode0_",
                                    **kwargs))
 
             coeffs.append(torch.where(true_mode == 0, 1 - self.gamma, self.gamma).view(B, H))
 
         # dense mode loss
-        with timeit(f'loss/policy_mode0_loss'):
+        with timeit(f'loss/policy_mode1_loss'):
             mode_action_losses.append(
                 self.mode1_loss_fn(self, model_outputs, inputs, outputs, i=i, writer=writer,
-                                   writer_prefix=writer_prefix + f"policy_mode1_loss/",
+                                   writer_prefix=writer_prefix + f"mode1_/",
                                    **kwargs))
 
             coeffs.append(torch.where(true_mode == 1, 1 - self.gamma, self.gamma).view(B, H))

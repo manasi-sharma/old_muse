@@ -41,6 +41,9 @@ class Spec:
         self._names_to_dtypes[name] = dtype
         self._names.append(name)
 
+    def get_sld(self, name):
+        return self._names_to_shapes[name], self._names_to_limits[name], self._names_to_dtypes[name]
+
     def _init_params_to_attrs(self, params: AttrDict):
         pass
 

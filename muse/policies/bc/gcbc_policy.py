@@ -58,11 +58,11 @@ class GCBCPolicy(MemoryPolicy):
         return out
 
     # policy first rolls out model, then postprocess action(s) as defined by utils
-    def default_mem_policy_model_forward_fn(self, model, obs: d, goal: d, memory: d, known_sequence=None, **kwargs):
+    def default_mem_policy_model_forward_fn(self, model, obs: d, goal: d, memory: d, **kwargs):
 
         if self.model_forward_fn is None:
-            self.model_forward_fn = model.get_default_mem_policy_forward_fn(self.replan_horizon,
-                                                                            self._policy_out_names,
+            self.model_forward_fn = model.get_default_mem_policy_forward_fn(replan_horizon=self.replan_horizon,
+                                                                            policy_out_names=self._policy_out_names,
                                                                             recurrent=self.recurrent,
                                                                             sample_plan=self.sample_plan,
                                                                             flush_horizon=self.flush_horizon)
@@ -71,7 +71,7 @@ class GCBCPolicy(MemoryPolicy):
         goal = goal.leaf_arrays().leaf_apply(lambda arr: arr.to(dtype=torch.float32))
 
         # model/rnn forward, root_model used for model.forward, decoder used for recurrent state tracking.
-        out = self.model_forward_fn(model, obs, goal, memory, known_sequence=known_sequence, **kwargs)
+        out = self.model_forward_fn(model, obs, goal, memory, **kwargs)
 
         # optional mode switching between velocity & target/position action
         if self.mode_key is None:

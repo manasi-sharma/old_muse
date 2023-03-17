@@ -1,5 +1,6 @@
 from attrdict import AttrDict as d
 
+from muse.experiments import logger
 from muse.grouped_models.grouped_model import GroupedModel
 from muse.models.bc.action_decoders import ActionDecoder
 from muse.utils.abstract import Argument
@@ -45,6 +46,12 @@ class BaseGCBC(GroupedModel):
             self.goal_names = params["goal_names"]
             assert all(g.startswith('goal/') for g in self.goal_names), "Goal states must start with goal/"
             self.deprefixed_goal_names = [g[5:] for g in self.goal_names]
+
+            for g, dg in zip(self.goal_names, self.deprefixed_goal_names):
+                # if goal is not in spec, add it using deprefixed name
+                if g not in self.env_spec.all_spec_names:
+                    logger.warn(f"[GCBC] Adding {g} to env_spec using sld from {dg}!")
+                    self.env_spec.add_nsld(g, *self.env_spec.get_sld(dg))
 
     def _init_setup(self):
         super()._init_setup()

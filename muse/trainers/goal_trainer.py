@@ -446,17 +446,17 @@ class GoalTrainer(BaseGoalTrainer):
                         self._save(chkpt=is_next_cycle(self._current_step, self._save_checkpoint_every_n_steps),
                                    best=do_best)
 
-                    # SAVE DATA
-                    for i in range(len(self._datasets_train)):
-                        if is_next_cycle(self._current_step, self._save_data_train_every_n_steps[i]):
-                            with timeit('save_data_train'):
-                                self._datasets_train[i].save()
+                # SAVE DATA
+                for i in range(len(self._datasets_train)):
+                    if is_next_cycle(self._current_step, self._save_data_train_every_n_steps[i]):
+                        with timeit('save_data_train'):
+                            self._datasets_train[i].save()
 
-                    for i in range(len(self._datasets_holdout)):
-                        if is_next_cycle(self._current_step, self._save_data_holdout_every_n_steps[i]):
-                            with timeit('save_data_holdout'):
-                                self._datasets_holdout[i].save()
+                for i in range(len(self._datasets_holdout)):
+                    if is_next_cycle(self._current_step, self._save_data_holdout_every_n_steps[i]):
+                        with timeit('save_data_holdout'):
+                            self._datasets_holdout[i].save()
 
-                # log (outside of timeit)
-                if is_next_cycle(self._current_step, self._log_every_n_steps):
-                    self._log()
+            # log (outside of timeit)
+            if is_next_cycle(self._current_step, self._log_every_n_steps):
+                self._log()

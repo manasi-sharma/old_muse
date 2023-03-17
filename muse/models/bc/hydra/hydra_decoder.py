@@ -8,7 +8,7 @@ from muse.utils.abstract import Argument, resolve_arguments
 from muse.utils.general_utils import timeit
 import torch.nn.functional as F
 
-from muse.utils.param_utils import get_policy_dist_cap, SequentialParams, build_mlp_param_list, get_policy_dist_out_size
+from muse.utils.param_utils import get_dist_cap, SequentialParams, build_mlp_param_list, get_dist_out_size
 
 
 class HydraActionDecoder(ActionDecoder):
@@ -45,9 +45,9 @@ class HydraActionDecoder(ActionDecoder):
         super()._preload_params(params)
 
         self.sparse_policy_out_size = self.env_spec.dim(self.sparse_action_names)
-        self.sparse_policy_raw_out_size = get_policy_dist_out_size(self.sparse_policy_out_size,
-                                                                   prob=self.sparse_use_policy_dist,
-                                                                   num_mix=self.sparse_policy_num_mix)
+        self.sparse_policy_raw_out_size = get_dist_out_size(self.sparse_policy_out_size,
+                                                            prob=self.sparse_use_policy_dist,
+                                                            num_mix=self.sparse_policy_num_mix)
 
         # get default params for grouped model before parsing but after reading params, allowing for override
         params.sparse_decoder = self.get_default_sparse_decoder_params() & \
@@ -66,10 +66,9 @@ class HydraActionDecoder(ActionDecoder):
     def _init_action_caps(self):
         super()._init_action_caps()
         # cap for the sparse model
-        self.sparse_action_cap = get_policy_dist_cap(self.sparse_use_policy_dist, self.sparse_use_tanh_out,
-                                                     num_mix=self.sparse_policy_num_mix,
-                                                     policy_sig_min=self.sparse_policy_sig_min,
-                                                     policy_sig_max=self.sparse_policy_sig_max)
+        self.sparse_action_cap = get_dist_cap(self.sparse_use_policy_dist, self.sparse_use_tanh_out,
+                                              num_mix=self.sparse_policy_num_mix, sig_min=self.sparse_policy_sig_min,
+                                              sig_max=self.sparse_policy_sig_max)
         self.sparse_action_cap = self.sparse_action_cap.to_module_list(as_sequential=True).to(self.device)
 
     def _init_setup(self):

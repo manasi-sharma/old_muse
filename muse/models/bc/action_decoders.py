@@ -12,8 +12,8 @@ from muse.models.rnn_model import RnnModel
 from muse.models.seq_model import SequenceModel
 from muse.utils.abstract import Argument
 from muse.utils.general_utils import timeit
-from muse.utils.param_utils import get_policy_dist_cap, LayerParams, SequentialParams, build_mlp_param_list, \
-    get_policy_dist_out_size
+from muse.utils.param_utils import get_dist_cap, LayerParams, SequentialParams, build_mlp_param_list, \
+    get_dist_out_size
 from muse.utils.torch_utils import unsqueeze_then_gather
 
 
@@ -47,8 +47,8 @@ class ActionDecoder(GroupedModel):
         # size of all actions stacked together
         self.policy_out_size = self.env_spec.dim(self.action_names)  # e.g., deterministic output
         # compute the raw size of the output of network
-        self.policy_raw_out_size = get_policy_dist_out_size(self.policy_out_size,
-                                                            prob=self.use_policy_dist, num_mix=self.policy_num_mix)
+        self.policy_raw_out_size = get_dist_out_size(self.policy_out_size,
+                                                     prob=self.use_policy_dist, num_mix=self.policy_num_mix)
 
         self.decoder_out_size = self.policy_raw_out_size
 
@@ -74,9 +74,8 @@ class ActionDecoder(GroupedModel):
 
     def _init_action_caps(self):
         # cap for the inner model
-        self.action_cap = get_policy_dist_cap(self.use_policy_dist, self.use_tanh_out, num_mix=self.policy_num_mix,
-                                              policy_sig_min=self.policy_sig_min,
-                                              policy_sig_max=self.policy_sig_max)
+        self.action_cap = get_dist_cap(self.use_policy_dist, self.use_tanh_out, num_mix=self.policy_num_mix,
+                                       sig_min=self.policy_sig_min, sig_max=self.policy_sig_max)
         self.action_cap = self.action_cap.to_module_list(as_sequential=True).to(self.device)
 
     def get_default_decoder_params(self) -> d:

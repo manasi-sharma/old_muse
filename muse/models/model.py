@@ -363,7 +363,8 @@ class Model(torch.nn.Module, BaseClass):
         return inputs
 
     # override this if you want your own loss
-    def loss(self, inputs, outputs, i=0, writer=None, writer_prefix="", training=True, ret_dict=False, meta=AttrDict(), **kwargs):
+    def loss(self, inputs, outputs, i=0, writer=None, writer_prefix="", training=True,
+             ret_dict=False, meta=AttrDict(), **kwargs):
         """
 
         :param inputs: (AttrDict)  (B x H x ...)
@@ -384,6 +385,10 @@ class Model(torch.nn.Module, BaseClass):
                 outputs = outputs.leaf_apply(lambda arr: arr[:, -self.loss_last_horizon:])
             loss = self._loss_fn(self, model_outputs, inputs, outputs, i=i, writer=writer, writer_prefix=writer_prefix,
                                  ret_dict=ret_dict, meta=meta, **kwargs)
+            # wrapping for ret_dict=True
+            if ret_dict and not isinstance(loss, AttrDict):
+                loss = AttrDict(loss=loss)
+            loss.model_outputs = model_outputs
         else:
             all_metrics = []
             all_metric_keys = []

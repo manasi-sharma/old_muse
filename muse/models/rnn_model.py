@@ -5,7 +5,9 @@ import torch
 from muse.experiments import logger
 from muse.models.basic_model import BasicModel
 from muse.models.model import Model
-from muse.utils.param_utils import LayerParams
+from muse.utils.abstract import Argument
+from muse.utils.param_utils import LayerParams, SequentialParams, build_mlp_param_list, get_dist_cap, \
+    get_dist_out_size
 from muse.utils.general_utils import timeit, is_next_cycle
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
@@ -45,7 +47,7 @@ class RnnModel(BasicModel):
         self.parallel_model = get_with_default(params, "parallel_model", None)
         if self.parallel_model is not None:
             self.parallel_model = (self.parallel_model["cls"])(self.parallel_model["params"], self.env_spec,
-                                                                 self._dataset_train)
+                                                               self._dataset_train)
             # default merge (after rnn) does not include outputs in the final net's inputs.
             self.merge_parallel_outputs_fn = get_with_default(params, "merge_parallel_outputs_fn",
                                                               lambda new_in, pout: new_in)
@@ -187,7 +189,7 @@ class RnnModel(BasicModel):
         def mem_policy_model_forward_fn(model: RnnModel, obs: AttrDict, goal: AttrDict, memory: AttrDict,
                                         root_model: Model = None, **inner_kwargs):
             obs = obs.leaf_copy()
-            if memory.is_empty():
+            if 'count' not in memory.keys():
                 memory.count = 0  # total steps
                 memory.flush_count = 0  # just for flushing the rnn state
 
@@ -225,6 +227,68 @@ class RnnModel(BasicModel):
             return base_model.online_postproc_fn(model, out, obs, goal, memory, **inner_kwargs)
 
         return mem_policy_model_forward_fn
+
+
+class DefaultRnnModel(RnnModel):
+    predefined_arguments = BasicModel.predefined_arguments + [
+        Argument("in_size", type=int, default=None),
+        Argument("out_size", type=int, default=None),
+
+        Argument("rnn_type", type=str, default="gru"),
+        Argument("bidirectional", action='store_true'),
+        Argument("hidden_size", type=int, default=128),
+        Argument("mlp_size", type=int, default=0),
+        Argument("rnn_depth", type=int, default=2),
+        Argument("dropout_p", type=float, default=0),
+
+        Argument("use_tanh_out", action="store_true"),
+        Argument("use_dist", action="store_true"),
+        Argument("num_mix", type=int, default=1),
+        Argument("use_dist_mean", action="store_true"),
+        Argument("sig_min", type=float, default=1e-5),
+        Argument("sig_max", type=float, default=1e3),
+    ]
+
+    def _init_params_to_attrs(self, params):
+        self.read_predefined_params(params)
+
+        if self.in_size is None:
+            self.in_size = self.env_spec.dim(params.model_inputs)
+        if self.out_size is None:
+            self.out_size = self.env_spec.dim(params.model_output)
+
+        if self.use_dist:
+            self.out_size = get_dist_out_size(self.out_size,
+                                              prob=self.use_dist, num_mix=self.num_mix)
+
+        # mlp after the rnn (will be removed if policy_size=0, special case)
+        if self.mlp_size == 0:
+            mlp_after_rnn_dims = [self.out_size]  # no mlp.
+        else:
+            mlp_after_rnn_dims = [self.policy_size, self.mlp_size, self.out_size]
+
+        params.rnn_output_name = get_with_default(params, 'rnn_output_name', 'rnn_output_policy')
+        params.hidden_name = get_with_default(params, 'hidden_name', 'hidden_policy')
+        params.rnn_before_net = True
+        params.tuple_hidden = self.rnn_type == "lstm"
+
+        params.recurrent_network = get_with_default(params, "recurrent_network",
+                                                    LayerParams(self.rnn_type, input_size=self.in_size,
+                                                                hidden_size=self.hidden_size,
+                                                                num_layers=self.rnn_depth,
+                                                                bidirectional=self.bidirectional, batch_first=True,
+                                                                dropout=self.dropout_p))
+
+        # optional cap
+        cap = get_dist_cap(self.use_dist, self.use_tanh_out, num_mix=self.num_mix, sig_min=self.sig_min,
+                           sig_max=self.sig_max)
+
+        rnn_out_size = (2 if self.bidirectional else 1) * self.hidden_size
+        params.network = get_with_default(params, "network", SequentialParams(
+            build_mlp_param_list(rnn_out_size, mlp_after_rnn_dims,
+                                 dropout_p=self.dropout_p) + [cap]))
+
+        super()._init_params_to_attrs(params)
 
 
 if __name__ == '__main__':

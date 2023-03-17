@@ -6,7 +6,7 @@ from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
 from attrdict import AttrDict as d
 
 export = d(
-    exp_name='_hydra-l2',
+    exp_name='_hydra-l2_g{gamma}_mb{mode_beta}',
     cls=HydraGCBC,
     use_goal=False,
     use_last_state_goal=False,
@@ -66,7 +66,7 @@ export = d(
         policy_size=0,
         action_head_size=F('../head_size'),
         mode_head_size=F('../head_size'),
-        sparse_mlp_size=F('hidden_size'),
+        sparse_mlp_size=F('../head_size'),
         decoder_inter_size=F('hidden_size'),
         rnn_depth=2,
     ),

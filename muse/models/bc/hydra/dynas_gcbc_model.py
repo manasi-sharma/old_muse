@@ -15,8 +15,8 @@ from muse.models.bc.gcbc import BaseGCBC, RNN_GCBC, TransformerGCBC
 from muse.models.model import Model
 from muse.models.rnn_model import RnnModel
 from muse.utils.abstract import Argument, resolve_arguments
-from muse.utils.param_utils import get_policy_dist_cap, SequentialParams, build_mlp_param_list, LayerParams, \
-    get_policy_dist_out_size
+from muse.utils.param_utils import get_dist_cap, SequentialParams, build_mlp_param_list, LayerParams, \
+    get_dist_out_size
 from muse.utils.general_utils import timeit, is_next_cycle
 
 from attrdict import AttrDict as d
@@ -145,9 +145,9 @@ class DynamicActionBaseGCBC(BaseGCBC):
         self.sparse_in_size = self.env_spec.dim(self.sparse_in_names)
         self.sparse_policy_out_size = self.env_spec.dim(self.sparse_action_names)
 
-        self.sparse_policy_raw_out_size = get_policy_dist_out_size(self.sparse_policy_out_size,
-                                                                   prob=self.sparse_use_policy_dist,
-                                                                   num_mix=self.sparse_policy_num_mix)
+        self.sparse_policy_raw_out_size = get_dist_out_size(self.sparse_policy_out_size,
+                                                            prob=self.sparse_use_policy_dist,
+                                                            num_mix=self.sparse_policy_num_mix)
 
     def _mode_predictor_model_params_to_attrs(self, params):
         raise NotImplementedError(f'Mode predictor not implemented in {type(self)}')
@@ -203,10 +203,9 @@ class DynamicActionBaseGCBC(BaseGCBC):
     def _init_caps(self):
         super()._init_caps()
         # cap for the sparse model
-        self.sparse_model_cap = get_policy_dist_cap(self.sparse_use_policy_dist, self.sparse_use_tanh_out,
-                                                    num_mix=self.sparse_policy_num_mix,
-                                                    policy_sig_min=self.sparse_policy_sig_min,
-                                                    policy_sig_max=self.sparse_policy_sig_max)
+        self.sparse_model_cap = get_dist_cap(self.sparse_use_policy_dist, self.sparse_use_tanh_out,
+                                             num_mix=self.sparse_policy_num_mix, sig_min=self.sparse_policy_sig_min,
+                                             sig_max=self.sparse_policy_sig_max)
         self.sparse_model_cap = self.sparse_model_cap.to_module_list(as_sequential=True).to(self.device)
 
         class_weights = None
