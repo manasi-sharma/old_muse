@@ -53,60 +53,6 @@ def get_policy_type_switch(pl_inputs: d, type_key):
     return true_type_diffs
 
 
-def get_policy_goal_switch(pl_inputs: d, goal_keys):
-    # diff over horizon, check if any changes occur in frame
-    goal_flat = pl_inputs.node_leaf_filter_keys_required(goal_keys) \
-        .leaf_apply(lambda arr: combine_after_dim(arr, start_dim=2))
-    goal_flat_cat = concatenate(goal_flat, goal_keys, dim=-1)
-    # (B,) mask for changing goals
-    true_goal_diffs = (torch.linalg.norm(torch.diff(goal_flat_cat, dim=1), dim=-1) > 1e-4).any(dim=1)
-    return true_goal_diffs
-
-
-# Play-LMP implementation with LMPGroupedModel
-def get_play_lmp_selector_models(DEVICE, input_names, prior_goal_state_names, prior_input_names,
-                                 policy_goal_state_names, policy_names,
-                                 prior_cut_last_h_steps=-1, policy_cut_last_h_steps=1, prefix="goal_states"):
-    # the goal states names == posterior state names are a subset of all the prior state names
-    # assert set(prior_goal_state_names).issubset(input_names), [input_names, prior_goal_state_names]
-    # assert set(policy_goal_state_names).issubset(prior_goal_state_names), [policy_goal_state_names,
-    #                                                                        prior_goal_state_names]
-    # assert set(policy_goal_state_names).issubset(policy_names), [policy_goal_state_names, policy_names]
-    return d(
-        # goal selector returns the goals for prior (last state from B x H ...), broadcasted
-        # goal/<goal_state_name> will have the goal
-        goal_selector=d(
-            cls=FunctionModel,
-            device=DEVICE,
-            forward_fn=lambda model, inputs: (inputs > list(set(prior_goal_state_names + policy_goal_state_names)))
-                .leaf_apply(lambda arr: broadcast_dims(arr[:, -1:], [1], [arr.shape[1]]))
-        ),
-        # posterior takes pl_inputs and stacks the state with the goal
-        posterior_input_selector=d(
-            cls=FunctionModel,
-            device=DEVICE,
-            forward_fn=lambda model, pl_inputs: (pl_inputs > input_names) & (
-                    pl_inputs < ["goal_states", "padding_mask"])
-        ),
-        # considers just t = 0 with the goal (hence cutting).
-        prior_input_selector=d(
-            cls=FunctionModel,
-            device=DEVICE,
-            forward_fn=lambda model, pl_inputs: cut_then_concat_goal_select_fn(pl_inputs, prior_input_names,
-                                                                               prior_goal_state_names,
-                                                                               prior_cut_last_h_steps, prefix=prefix)
-        ),
-        policy_input_selector=d(
-            cls=FunctionModel,
-            device=DEVICE,
-            forward_fn=lambda model, pl_inputs: cut_then_concat_goal_select_fn(pl_inputs, policy_names,
-                                                                               policy_goal_state_names,
-                                                                               policy_cut_last_h_steps,
-                                                                               prefix=prefix, cat_dim=-1)
-        )
-    )
-
-
 def get_gcbc_preproc_fn(no_goal, use_final_goal, device, POLICY_NAMES, POLICY_GOAL_STATE_NAMES):
     def policy_preproc_fn(inputs):
         # move inputs and potentially specified goals to torch to the right dtype.
@@ -280,3 +226,95 @@ def get_vq_plan_dist_fn(plan_name, vq_beta=0.25, beta_post=1., beta_pr=1.):
         return beta_post * posterior_losses["loss"] + beta_pr * prior_losses["loss"]
 
     return vq_plan_fn
+
+
+def get_parse_interaction_from_episode_fn(get_contact_fn, window=3, min_contact_len=1, max_contact_len=80,
+                                          max_interaction_len=0, bounds=False):
+    """
+    Parse contact
+    Parameters
+    ----------
+    get_contact_fn
+    window
+    min_contact_len
+    max_contact_len
+    max_interaction_len
+    bounds
+
+    Returns
+    -------
+
+    """
+    W = 4 if bounds else 2
+
+    def parse_interaction_from_episode_fn(inputs, outputs):
+        # first mask by contact
+        contact = get_contact_fn(inputs)
+
+        if len(contact) <= min_contact_len:
+            # logger.warn("Skipping episode -- short episode!")
+            return np.zeros((0, W)), 0
+
+        # first pass: smooth
+        mask = np.zeros(contact.shape, dtype=bool)
+        for i in range(len(mask)):
+            start = max(i - window, 0)
+            end = min(i + window, len(mask))
+            mask[i] = np.max(contact[start:end])
+        # second pass: chunk
+        # print(mask.shape)
+        mask_pre = np.concatenate([[False], mask[:-1]])
+        # first idx with smoothed contact
+        contact_begins = np.logical_and(~mask_pre, mask).nonzero()[0]
+        # first idx with no smoothed contact
+        contact_ends = np.logical_and(mask_pre, ~mask).nonzero()[0]
+
+        n_skip = 0
+        to_keep = None
+        if len(contact_begins) > 0:
+            # cannot end more than beginnings.
+            assert len(contact_ends) in [len(contact_begins) - 1,
+                                         len(contact_begins)], "Too many/few contact endings"
+            # no ending, create an artificial ending if we end in contact
+            if len(contact_ends) == len(contact_begins) - 1:
+                contact_ends = np.append(contact_ends, len(mask))
+
+            c_lens = contact_ends - contact_begins
+            to_keep = c_lens >= min_contact_len
+            if max_contact_len > 0:
+                to_keep = np.logical_and(to_keep, c_lens <= max_contact_len)
+
+        # lists of start then end of each contact. (N, 2)
+        # segments = np.stack([contact_begins, contact_ends], axis=1).reshape(-1, 2)
+        if len(contact_begins) == 0:
+            # logger.warn("Skipping episode -- no contact interactions!")
+            return np.zeros((0, W)), 0
+        else:
+            # an interaction goes from the last end to the next start
+
+            # NOTE : ends are the starting time (include), starts are the first steps with contact (exclude)
+            prev_ends = np.concatenate([[0], contact_ends])[:-1]
+            next_starts = np.concatenate([contact_begins, [len(mask)]])[1:]
+            cstarts = contact_begins
+            cends = contact_ends
+
+            if max_interaction_len > 0 and to_keep is not None:
+                to_keep = np.logical_and(to_keep, next_starts - prev_ends + 1 <= max_interaction_len)
+
+            if to_keep is not None:
+                n_skip = len(prev_ends)
+                prev_ends = prev_ends[to_keep]
+                n_skip = n_skip - len(prev_ends)  # how much was removed
+                next_starts = next_starts[to_keep]
+                if bounds:
+                    cstarts = cstarts[to_keep]
+                    cends = cends[to_keep]
+
+            if bounds:
+                # N x 4
+                return np.stack([prev_ends, cstarts, cends, next_starts], axis=-1), n_skip
+            else:
+                # N x 2, from last end, to next starts.
+                return np.stack([prev_ends, next_starts], axis=-1), n_skip
+
+    return parse_interaction_from_episode_fn

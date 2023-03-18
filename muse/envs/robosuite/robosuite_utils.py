@@ -4,8 +4,12 @@ import torch
 from muse.envs.mode_param_spec import BiModalParamEnvSpec
 from muse.utils.general_utils import is_array
 from muse.utils.np_utils import clip_norm, clip_scale
-from muse.utils.torch_utils import to_numpy, to_torch
+from muse.utils.torch_utils import to_numpy, to_torch, cat_any
 import muse.utils.transform_utils as T
+
+
+GRIPPER_WIDTH_TOL = 0.05
+GRIPPER_WIDTH_DELTA_TOL = 1e-3
 
 
 def parse_orientations(unnorm_out, targ_prefix):
@@ -250,3 +254,28 @@ def modify_spec_prms(prms, no_names=False, raw=False, minimal=False, no_reward=F
         prms.action_names.extend(['target/gripper'])
 
     return prms
+
+
+def rs_gripper_width_as_contact_fn(inputs):
+    """
+    Takes an episode
+
+    Parameters
+    ----------
+    self
+    inputs
+
+    Returns
+    -------
+
+    """
+    c0 = inputs.robot0_gripper_qpos[..., 0]
+    c1 = inputs.robot0_gripper_qpos[..., 1]
+
+    gw = c1 - c0
+
+    contact = np.abs(gw) < GRIPPER_WIDTH_TOL
+    return contact
+
+
+

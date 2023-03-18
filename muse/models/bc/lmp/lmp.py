@@ -59,7 +59,8 @@ class LMPBaseGCBC(BaseGCBC):
 
         # forward during loss computation requires the posterior / decoder from posterior plan.
         # run the posterior decoder only if we are not optimizing the prior decoder
-        self._loss_forward_kwargs = {'run_posterior': True,
+        self._loss_forward_kwargs = {'select_goal': True,
+                                     'run_posterior': True,
                                      'run_posterior_decoder': not self.optimize_prior}
 
     def compute_plan_prior(self, pl_inputs, sample=True, **kwargs):
@@ -113,6 +114,7 @@ class LMPBaseGCBC(BaseGCBC):
         return plan_posterior_outs
 
     def forward(self, inputs,
+                select_goal=False,
                 run_posterior=False,
                 run_posterior_decoder=False,
                 prior_plan=None,
@@ -134,6 +136,9 @@ class LMPBaseGCBC(BaseGCBC):
         Parameters
         ----------
         inputs
+        select_goal: bool
+            if True and self.use_goal, will select the goal from the inputs if not present
+                (otherwise it must be provided in inputs)
         run_posterior: bool
             run the posterior to get the plan
         run_posterior_decoder: bool
@@ -184,7 +189,10 @@ class LMPBaseGCBC(BaseGCBC):
 
         # get the goal and add it
         if self.use_goal:
-            inputs.combine(self.select_goals(inputs))
+            if select_goal:
+                inputs.combine(self.select_goals(inputs))
+            else:
+                assert inputs.has_leaf_keys(self.goal_names), f"Missing goal names {self.goal_names} from input!"
 
         if prior_plan is None:
             with timeit("lmp/prior"):
@@ -235,7 +243,7 @@ class LMPBaseGCBC(BaseGCBC):
 
         return inputs & outputs
 
-    def unsupervised_loss(self, model_outputs, inputs, outputs, i=0, writer=None, writer_prefix="", **kwargs):
+    def additional_loss(self, model_outputs, inputs, outputs, i=0, writer=None, writer_prefix="", **kwargs):
         """ Additional losses that operate on posterior/prior, for example.
 
         Parameters
@@ -304,11 +312,11 @@ class LMPBaseGCBC(BaseGCBC):
         # get decoder losses
         plan_prefix = "prior/" if self.optimize_prior else "posterior/"
         policy_loss = self.action_loss(model_outs, inputs, outputs, i=i,
-                                       writer=writer, writer_prefix=writer_prefix + plan_prefix, **kwargs).mean()
+                                       writer=writer, writer_prefix=writer_prefix + plan_prefix).mean()
 
-        unsupervised_losses = self.unsupervised_loss(model_outs, inputs, outputs, i=i, writer=writer,
-                                                     writer_prefix=writer_prefix, ret_dict=ret_dict,
-                                                     meta=meta, **kwargs)
+        unsupervised_losses = self.additional_loss(model_outs, inputs, outputs, i=i, writer=writer,
+                                                   writer_prefix=writer_prefix, ret_dict=ret_dict,
+                                                   meta=meta, **kwargs)
 
         # add all additional unsupervised losses in
         loss = policy_loss
@@ -330,13 +338,11 @@ class LMPBaseGCBC(BaseGCBC):
                     # compute action loss using the posterior decoder outputs
                     posterior_policy_loss = self.action_loss(model_outs & model_outs.posterior_decoder, inputs, outputs,
                                                              i=i, writer=writer,
-                                                             writer_prefix=writer_prefix + "posterior/",
-                                                             **kwargs).mean()
+                                                             writer_prefix=writer_prefix + "posterior/").mean()
                 else:
                     # compute action loss using the posterior decoder outputs
                     prior_policy_loss = self.action_loss(model_outs & model_outs.prior_decoder, inputs, outputs, i=i,
-                                                         writer=writer, writer_prefix=writer_prefix + "prior/",
-                                                         **kwargs).mean()
+                                                         writer=writer, writer_prefix=writer_prefix + "prior/").mean()
                     posterior_policy_loss = policy_loss
 
                 # write each one
@@ -378,6 +384,7 @@ class LMPBaseGCBC(BaseGCBC):
 
         def inner_fn(model, obs, goal, memory, **inner_kwargs):
             # fill in plan if it is present
+            # assumes "count" will be tracked and updated in "fn" above
 
             if 'count' not in memory.keys() or is_next_cycle(memory.count, replan_horizon):
                 inner_kwargs['prior_plan'] = None
@@ -385,11 +392,11 @@ class LMPBaseGCBC(BaseGCBC):
                 # this will be filled in from previous step
                 inner_kwargs['prior_plan'] = memory.plan
 
-            # call parent fn (
-            out = fn(model, obs, goal, memory, root_model=model, **inner_kwargs)
+            # call parent fn (GCBC forward)
+            out = fn(model, obs, goal, memory, **inner_kwargs)
 
-            # put plan into memory for next time.
-            memory.plan = out[self.plan_name]
+            # put prior plan into memory for next time.
+            memory.plan = out.prior[self.plan_name]
 
             return out
 
