@@ -23,6 +23,7 @@ export = sq_hydra.export & d(
     env_train=tool_hang.export,
     horizon=20,
     model=d(
+        gamma=0.25,
         mode_beta=0.1,
         use_smooth_mode=False,
         head_size=400,

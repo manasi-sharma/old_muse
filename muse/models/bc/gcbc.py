@@ -119,7 +119,7 @@ class BaseGCBC(GroupedModel):
         with timeit("gcbc/encoders"):
             # call each encoder forward, and add to inputs
             for enc_name in self.state_encoder_order:
-                inputs.combine(self[enc_name](inputs))
+                inputs.combine(self[enc_name](inputs, **self.get_kwargs(enc_name, kwargs)))
 
         # get the goal and add it
         if self.use_goal:
@@ -129,8 +129,10 @@ class BaseGCBC(GroupedModel):
                 assert inputs.has_leaf_keys(self.goal_names), "Missing goal names from input!"
 
         with timeit("gcbc/decoder"):
-            # run the action decoder.
-            outputs = self.action_decoder(inputs, **kwargs)
+            # run the action decoder (support for nested kwargs)
+            outputs = d()
+            outputs['action_decoder'] = self.action_decoder(inputs, **self.get_kwargs('action_decoder', kwargs))
+            outputs.combine(outputs.action_decoder)
 
         return inputs & outputs
 
@@ -138,21 +140,3 @@ class BaseGCBC(GroupedModel):
     def decoder(self):
         # the actual decoder
         return self.action_decoder.decoder
-
-    def get_default_mem_policy_forward_fn(self, *args, **kwargs):
-        """ Function that policy will use to run model forward (see GCBCPolicy)
-
-        Default behavior is to call decoder mem policy forward with self as root model (forward will be called on root)
-
-        Parameters
-        ----------
-        args
-        kwargs
-
-        Returns
-        -------
-
-        """
-        fn = self.decoder.get_default_mem_policy_forward_fn(*args, **kwargs)
-        return lambda model, *inner_args, **inner_kwargs: fn(model.decoder, *inner_args,
-                                                             root_model=self, **inner_kwargs)

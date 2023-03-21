@@ -61,5 +61,5 @@ class MemoryPolicy(Policy):
         return self._is_terminated_fn(model, observation, goal, self.memory, **kwargs)
 
 
-def get_timeout_terminate_fn(max_steps):
-    return lambda model, obs, goal, mem, **kwargs: False if mem.is_empty() else mem >> "count" >= max_steps
+def get_timeout_terminate_fn(max_steps, count_key='count'):
+    return lambda model, obs, goal, mem, **kwargs: False if mem.is_empty() else mem[count_key] >= max_steps

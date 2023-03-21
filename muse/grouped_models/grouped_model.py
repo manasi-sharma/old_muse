@@ -176,3 +176,74 @@ class GroupedModel(Model, Iterable):
         """ Pretrain actions """
         for m in self:
             m.pretrain(datasets_holdout=datasets_holdout)
+
+    @staticmethod
+    def get_kwargs(name, kwargs) -> dict:
+        if f'{name}_kwargs' in kwargs:
+            return kwargs[f'{name}_kwargs']
+        else:
+            return {}
+
+    def get_default_mem_policy_forward_fn(self, *args, separate_fns=False, **kwargs):
+        """ Function that policy will use to run model forward (see MemoryPolicy)
+
+        Default behavior is to call all sub models, with their pre actions, then locally model forward, then post.
+
+        A different sub-dict will be used in memory for each model that specifies a forward_fn.
+
+        Parameters
+        ----------
+        args
+        separate_fns: bool
+        kwargs
+
+        Returns
+        -------
+
+        """
+        names, pre_fns, post_fns = [], [], []
+        for n in self._model_order:
+            m = self[n]
+            if hasattr(m, "get_default_mem_policy_forward_fn"):
+                pre_fn, post_fn, _ = m.get_default_mem_policy_forward_fn(*args, separate_fns=True, **kwargs)
+                pre_fns.append(pre_fn)
+                post_fns.append(post_fn)
+                names.append(n)
+
+        def agg_pre_fn(model, obs, goal, memory, **inner_kwargs):
+            for name, pre_forward_fn in zip(names, pre_fns):
+                if name not in memory:
+                    memory[name] = d()
+                if f"{name}_kwargs" not in inner_kwargs:
+                    inner_kwargs[f"{name}_kwargs"] = {}
+                obs, goal, memory[name], inner_kwargs[f"{name}_kwargs"] = \
+                    pre_forward_fn(model[name], obs, goal, memory[name], **inner_kwargs[f"{name}_kwargs"])
+            return obs, goal, memory, inner_kwargs
+
+        def agg_post_fn(model, out, obs, goal, memory):
+            for name, post_forward_fn in zip(names, post_fns):
+                out[name] = post_forward_fn(model[name], out[name], obs, goal, memory[name])
+                # move everything to top level as well.
+                out.combine(out[name])
+            return out
+
+        def forward_fn(model, obs, goal, memory, **inner_kwargs):
+            obs, goal, memory, inner_kwargs = agg_pre_fn(model, obs, goal, memory, **inner_kwargs)
+
+            # local count tracker
+            if 'count' not in memory:
+                memory.count = 0
+                memory.increment_count_locally = True
+
+            # normal policy w/ fixed plan, we use prior, doesn't really matter here tho since run_plan=False
+            out = model.forward(obs, goal, **inner_kwargs)
+
+            if 'increment_count_locally' in memory and memory['increment_count_locally']:
+                memory.count += 1
+
+            return agg_post_fn(model, out, obs, goal, memory)
+
+        if separate_fns:
+            return agg_pre_fn, agg_post_fn, forward_fn
+        else:
+            return forward_fn

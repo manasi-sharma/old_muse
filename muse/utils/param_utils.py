@@ -159,8 +159,7 @@ def get_dist_cap(prob, use_tanh_out, num_mix=1, sig_min=1e-5, sig_max=1e5):
             is_categorical=True,  # learn the mixture weights
             base_dist=d(
                 cls=GaussianDistributionCap,
-                params=d(use_log_sig=False, use_tanh_mean=use_tanh_out, event_dim=1,
-                         sig_min=sig_min, sig_max=sig_max)
+                use_log_sig=False, use_tanh_mean=use_tanh_out, event_dim=1, sig_min=sig_min, sig_max=sig_max
             ),
         ))
 
@@ -170,7 +169,7 @@ def add_policy_dist_cap(network: SequentialParams, num_mix, use_tanh_out, hidden
     """
     Adds a linear map + gaussian dist cap to existing SequentialParams.
     """
-    assert num_mix >=1, f"{num_mix} must be >= 1"
+    assert num_mix >= 1, f"{num_mix} must be >= 1"
 
     # layer param list, except the last linear layer and optional tanh layer
     base_layers = network.params[:-1 - int(use_tanh_out)]

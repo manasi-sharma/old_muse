@@ -2,17 +2,19 @@ from configs.fields import Field as F
 from muse.models.bc.hydra.hydra_decoder import HydraRNNActionDecoder
 from muse.models.bc.hydra.hydra_gcbc import HydraGCBC
 from muse.models.model import Model
+from muse.utils.general_utils import value_if_none
 from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
 from attrdict import AttrDict as d
 
 export = d(
-    exp_name='_hydra-l2_g{gamma}_mb{mode_beta}',
+    exp_name='_hydra{?use_mode_predictor:-mp}-l2_g{gamma}_mb{mode_beta}',
     cls=HydraGCBC,
     use_goal=False,
     use_last_state_goal=False,
 
     normalize_states=False,
     save_action_normalization=True,
+    use_mode_predictor=False,
 
     # hydra model/loss specific
     gamma=0.5,
@@ -20,6 +22,8 @@ export = d(
     label_smoothing=0.0,
     use_smooth_mode=False,
     head_size=200,
+    # fill this in to override mode_head_size (which defaults to head_size)
+    mode_predictor_size=0,
 
     action_names=['action'],
     sparse_action_names=['target/position', 'target/orientation'],
@@ -50,6 +54,7 @@ export = d(
         exp_name='_{rnn_type}-hs{hidden_size}-ps{action_head_size}-ms{mode_head_size}{?use_policy_dist:-pd}'
                  '_sms{sparse_mlp_size}',
         cls=HydraRNNActionDecoder,
+        use_mode_predictor=F('../use_mode_predictor'),
         input_names=F('../state_names'),
         action_names=F('../action_names'),
         sparse_action_names=F('../sparse_action_names'),
@@ -65,7 +70,7 @@ export = d(
         hidden_size=400,
         policy_size=0,
         action_head_size=F('../head_size'),
-        mode_head_size=F('../head_size'),
+        mode_head_size=F(['../head_size', '../mode_predictor_size'], lambda x, m: x if m == 0 else m),
         sparse_mlp_size=F('../head_size'),
         decoder_inter_size=F('hidden_size'),
         rnn_depth=2,

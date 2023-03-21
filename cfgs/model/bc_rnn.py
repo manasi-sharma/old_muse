@@ -2,9 +2,8 @@ from configs.fields import Field as F
 from muse.models.bc.action_decoders import RNNActionDecoder
 from muse.models.bc.gcbc import BaseGCBC
 from muse.models.model import Model
-from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
+from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn, get_default_nll_loss_fn
 from attrdict import AttrDict as d
-
 
 export = d(
     exp_name='_bc-l2',
@@ -14,6 +13,7 @@ export = d(
 
     normalize_states=False,
     save_action_normalization=False,
+    use_policy_dist=False,
 
     # names
     goal_names=['object'],
@@ -30,16 +30,16 @@ export = d(
 
     model_order=['proprio_encoder', 'action_decoder'],
     action_decoder=d(
-        exp_name='_{rnn_type}-hs{hidden_size}-ps{policy_size}{?use_policy_dist:-pd}',
+        exp_name='_{rnn_type}-hs{hidden_size}-ps{policy_size}{?use_policy_dist:-pd{policy_num_mix}}',
         cls=RNNActionDecoder,
         input_names=F('../state_names'),
         action_names=['action'],
         rnn_type='lstm',
-        use_policy_dist=False,
+        use_policy_dist=F('../use_policy_dist'),
         policy_num_mix=1,
-        use_policy_dist_mean=False,
-        policy_sig_min=1e-05,
-        policy_sig_max=1000.0,
+        use_policy_dist_mean=True,
+        policy_sig_min=1e-03,
+        policy_sig_max=10.0,
         use_tanh_out=True,
         policy_sample_cat=False,
         dropout_p=0,
@@ -47,7 +47,11 @@ export = d(
         policy_size=0,
         rnn_depth=2,
     ),
-    loss_fn=get_default_mae_action_loss_fn(['action'], max_grab=None,
-                                           err_fn=mse_err_fn, vel_act=True,
-                                           policy_out_norm_names=[]),
+    loss_fn=F('use_policy_dist',
+              lambda x: get_default_nll_loss_fn(['action'], policy_out_norm_names=[], vel_act=True)
+              if x else
+              get_default_mae_action_loss_fn(['action'], max_grab=None,
+                                             err_fn=mse_err_fn, vel_act=True,
+                                             policy_out_norm_names=[])
+              )
 )

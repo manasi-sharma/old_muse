@@ -96,7 +96,7 @@ class ActionDecoder(GroupedModel):
 
         # run inner model
         with timeit('decoder'):
-            decoder_outs = self.decoder(inputs, timeit_prefix="decoder/", **kwargs)
+            decoder_outs = self.decoder(inputs, timeit_prefix="decoder/", **self.get_kwargs('decoder', kwargs))
             # cap it off
             decoder_outs[self.policy_raw_out_name] = self.action_cap(decoder_outs[self.policy_raw_out_name])
 
@@ -105,6 +105,8 @@ class ActionDecoder(GroupedModel):
                                           self.action_names, use_mean=self.use_policy_dist,
                                           sample_cat=self.policy_sample_cat)
         out = decoder_outs & action_dc
+
+        out.decoder = decoder_outs
 
         return self._postproc_fn(inputs, out) if postproc else out
 

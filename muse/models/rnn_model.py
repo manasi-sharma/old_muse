@@ -172,7 +172,22 @@ class RnnModel(BasicModel):
         return self._postproc_fn(inputs, outputs) if postproc else outputs
 
     @staticmethod
-    def get_default_mem_policy_forward_fn(*args, add_goals_in_hor=False, flush_horizon=0, **kwargs):
+    def get_default_mem_policy_forward_fn(*args, add_goals_in_hor=False, flush_horizon=0, separate_fns=False, **kwargs):
+        """ Rnn Model forward.
+
+        Parameters
+        ----------
+        args
+        add_goals_in_hor
+        flush_horizon
+        separate_fns: Will return [pre_forward, post_forward, and (all together) forward_fn]
+        kwargs
+
+        Returns
+        -------
+        forward_fn or [pre_forward, post_forward, and (all together) forward_fn]
+
+        """
         assert isinstance(flush_horizon, int) and flush_horizon >= 0, flush_horizon
         if flush_horizon == 0:
             logger.warn("Note: RNN will never flush the hidden state online (flush_horizon=0)! This can cause issues "
@@ -185,9 +200,7 @@ class RnnModel(BasicModel):
             if isinstance(model.parallel_model, RnnModel):
                 submodel_apply(model.parallel_model, pmem.parallel_model, fn)
 
-        # online execution using MemoryPolicy or subclass
-        def mem_policy_model_forward_fn(model: RnnModel, obs: AttrDict, goal: AttrDict, memory: AttrDict,
-                                        root_model: Model = None, **inner_kwargs):
+        def pre_forward_fn(model: BasicModel, obs: AttrDict, goal: AttrDict, memory: AttrDict, **inner_kwargs):
             obs = obs.leaf_copy()
             if 'count' not in memory.keys():
                 memory.count = 0  # total steps
@@ -216,17 +229,31 @@ class RnnModel(BasicModel):
                 mem = mem.parallel_model
                 pk = pk['parallel_kwargs']
 
-            # normal policy w/ fixed plan, we use prior, doesn't really matter here tho since run_plan=False
-            base_model = (model if root_model is None else root_model)
-            out = base_model.forward(obs, rnn_hidden_init=memory["policy_rnn_h0"], parallel_kwargs=pkwargs,
-                                     **inner_kwargs)
+            inner_kwargs['rnn_hidden_init'] = memory['policy_rnn_h0']
+            inner_kwargs['parallel_kwargs'] = pkwargs
+            return obs, goal, memory, inner_kwargs
+
+        def post_forward_fn(model, out, obs, goal, memory):
             # NEXT OUTPUT
             submodel_apply(model, memory, lambda mod, mem: setattr(mem, 'policy_rnn_h0', out[mod.hidden_name]))
 
-            # default online postproc defined in BasicModel (parent class)
-            return base_model.online_postproc_fn(model, out, obs, goal, memory, **inner_kwargs)
+            return model.online_postproc_fn(model, out, obs, goal, memory)
 
-        return mem_policy_model_forward_fn
+        # online execution using MemoryPolicy or subclass
+        def mem_policy_model_forward_fn(model: BasicModel, obs: AttrDict, goal: AttrDict, memory: AttrDict,
+                                        root_model: Model = None, **inner_kwargs):
+
+            obs, goal, memory, inner_kwargs = pre_forward_fn(model, obs, goal, memory, **inner_kwargs)
+
+            # normal policy w/ fixed plan, we use prior, doesn't really matter here tho since run_plan=False
+            base_model = (model if root_model is None else root_model)
+            out = base_model.forward(obs, **inner_kwargs)
+            return post_forward_fn(model, out, obs, goal, memory)
+
+        if separate_fns:
+            return pre_forward_fn, post_forward_fn, mem_policy_model_forward_fn
+        else:
+            return mem_policy_model_forward_fn
 
 
 class DefaultRnnModel(RnnModel):
@@ -265,7 +292,7 @@ class DefaultRnnModel(RnnModel):
         if self.mlp_size == 0:
             mlp_after_rnn_dims = [self.out_size]  # no mlp.
         else:
-            mlp_after_rnn_dims = [self.policy_size, self.mlp_size, self.out_size]
+            mlp_after_rnn_dims = [self.mlp_size, self.mlp_size, self.out_size]
 
         params.rnn_output_name = get_with_default(params, 'rnn_output_name', 'rnn_output_policy')
         params.hidden_name = get_with_default(params, 'hidden_name', 'hidden_policy')
