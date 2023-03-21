@@ -102,7 +102,7 @@ class ActionDecoder(GroupedModel):
 
         # parse the action names from either vector or distribution.
         action_dc = self.parse_raw_action(self.env_spec, decoder_outs[self.policy_raw_out_name],
-                                          self.action_names, use_mean=self.use_policy_dist,
+                                          self.action_names, use_mean=self.use_policy_dist_mean,
                                           sample_cat=self.policy_sample_cat)
         out = decoder_outs & action_dc
 

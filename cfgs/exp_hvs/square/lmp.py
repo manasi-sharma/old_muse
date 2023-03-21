@@ -57,5 +57,9 @@ export = d(
         policy_model_forward_fn=lambda m, o, g, **kwargs: d(),
         timeout=2,
     ),
-    trainer=rm_goal_trainer.export,
+    # lmp takes longer to train, block env evaluation for 3x as long, and run for 2 mil steps.
+    trainer=rm_goal_trainer.export & d(
+        block_env_on_first_n_steps=60000,
+        max_steps=2e6,
+    ),
 )

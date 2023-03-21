@@ -21,6 +21,8 @@ if __name__ == '__main__':
     parser.add_argument('--run_async', action='store_true')
     parser.add_argument('--no_wandb', action='store_true')
     parser.add_argument('--wandb_project', type=str, default='muse')
+    parser.add_argument('--wandb_tags', type=str, default=None,
+                        help='tags as colon separated string, e.g. "muse:bc"')
     local_args, unknown = parser.parse_known_args()
 
     logger.debug(f"Raw command: \n{' '.join(sys.argv)}")
@@ -83,7 +85,12 @@ if __name__ == '__main__':
     if local_args.no_wandb:
         writer = None  # tensorboard
     else:
-        writer = WandbWriter(exp_name, AttrDict(project_name=local_args.wandb_project, config=params.as_dict()),
+        # colon separated tags
+        tags = local_args.wandb_tags
+        if tags is not None:
+            tags = tags.split(':')
+        writer = WandbWriter(exp_name,
+                             AttrDict(project_name=local_args.wandb_project, config=params.as_dict(), tags=tags),
                              file_manager, resume=getattr(local_args, 'continue'))
 
     # trainer

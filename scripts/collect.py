@@ -248,7 +248,8 @@ if __name__ == '__main__':
     policy = params.policy.cls(params.policy, env_spec, env=env)
 
     # generate dataset
-    logger.debug(f"Saving to file -> {args.save_file} every {args.save_every_n_episodes} eps.")
+    if args.save_every_n_episodes > 0:
+        logger.debug(f"Saving to file -> {args.save_file} every {args.save_every_n_episodes} eps.")
     if args.dataset_save_group is None:
         ds = d(cls=NpDataset, batch_size=10, horizon=10, capacity=capacity, output_file=args.save_file)
     else:

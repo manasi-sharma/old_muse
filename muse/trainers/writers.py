@@ -1,4 +1,8 @@
+from typing import List
+
 from attrdict.utils import get_with_default
+
+from muse.experiments import logger
 
 
 class Writer(object):
@@ -8,7 +12,8 @@ class Writer(object):
     TODO
     """
 
-    def __init__(self, exp_name: object, params: object, file_manager: object, resume: object = False) -> object:
+    def __init__(self, exp_name: object, params: object, file_manager: object,
+                 resume: object = False) -> object:
         self.exp_name = exp_name
         self.params = params.leaf_copy()
         self._file_manager = file_manager
@@ -76,10 +81,17 @@ class TensorboardWriter(Writer):
 
 class WandbWriter(Writer):
 
+    def _init_params_to_attrs(self, params):
+        super()._init_params_to_attrs(params)
+        self.tags = params << "tags"
+        if self.tags:
+            assert isinstance(self.tags, List), f"Tags {self.tags} must be a list!"
+            logger.debug(f'[wandb] Using tags: {self.tags}')
+
     def open(self):
         import wandb
         self.run = wandb.init(project=self.project_name, name=self.exp_name,
-                              config=self.config, resume=self.resume)
+                              config=self.config, resume=self.resume, tags=self.tags)
 
     def update_config(self, cfg_dict):
         self.run.config.update(cfg_dict)
