@@ -1,126 +1,61 @@
-import torch
+import numpy as np
 
-from cfgs.dataset import np_seq_train_val
+from cfgs.dataset import np_img_base_seq
 from cfgs.env import kitchen
+from cfgs.exp_hvs.square import bc_rnn as sq_bc_rnn
 from cfgs.model import vis_bc_rnn
-from cfgs.trainer import reward_tracker
+from cfgs.trainer import rm_goal_trainer
 
-from configs.exp_hvs.rm_utils import Robot3DLearningUtils
-from muse.envs.param_spec import ParamEnvSpec
-from muse.envs.robosuite.robosuite_env import get_rs_example_spec_params
-from muse.policies.basic_policy import BasicPolicy
-from muse.policies.bc.gcbc_policy import GCBCPolicy
-from muse.trainers.goal_trainer import GoalTrainer
-from muse.trainers.optimizers.optimizer import SingleOptimizer
-from muse.utils.config_utils import parse_cfgs, get_config_args
-from muse.utils.python_utils import AttrDict as d
+from attrdict import AttrDict as d
 
-utils = Robot3DLearningUtils(fast_dynamics=True, no_ori=True)
+from configs.fields import Field as F
 
-params = np_seq_train_val.params & d(
-    exp_name='hvsBlock3D/velact_STATIC_vi-env_seq_b16_lr0_0001_dec0_h10-10_human_buds-kitchen_60k_eimgs_'
-             'split0_9_bc-imobs-eimobs_qt_normgrabil_no-vel_l2err_tanh_imcrop_spatmax_lstm-hs1000-ps0',
-    env_spec=d(
-        cls=ParamEnvSpec,
-        params=get_rs_example_spec_params("KitchenEnv", img_width=128, img_height=128,
-                                          minimal=True, no_reward=True, no_object=True, no_ori=True,
-                                          include_img=True, include_ego_img=True)
-    ),
-    env_train=kitchen.params,
-    model=vis_bc_rnn.params & d(
-        params=d(
-            state_names=['robot0_eef_pos', 'robot0_gripper_qpos'],
-        )
-    ),
-    dataset_train=d(
-        params=d(
-            file='data/hvsBlock3D/human_buds-kitchen_60k_eimgs.npz',
-            index_all_keys=False,
-            capacity=100000,
-            batch_size=16,
-            horizon=10,
-            batch_names_to_get=['robot0_eef_pos', 'policy_switch', 'action', 'robot0_gripper_qpos', 'policy_type',
-                                'image', 'ego_image'],
+from muse.envs.robosuite.robosuite_env import RobosuiteEnv
+from muse.envs.robosuite.robosuite_utils import modify_spec_prms, get_rs_online_action_postproc_fn
+from muse.policies.memory_policy import get_timeout_terminate_fn
+
+env_spec_prms = RobosuiteEnv.get_default_env_spec_params(kitchen.export)
+env_spec_prms = modify_spec_prms(env_spec_prms, no_object=True)
+
+export = sq_bc_rnn.export.leaf_filter(lambda k, v: 'dataset' not in k) & d(
+    augment=False,
+    batch_size=16,
+    dataset='human_buds-kitchen_60k_eimgs',
+    exp_name='hvsBlock3D/velact_{?augment:aug_}b{batch_size}_h{horizon}_{dataset}',
+    # utils=utils,
+    env_spec=env_spec_prms,
+    env_train=kitchen.export,
+    model=vis_bc_rnn.export & d(
+        state_names=['robot0_eef_pos', 'robot0_gripper_qpos'],
+        vision_encoder=d(
+            image_shape=[128, 128, 3],
+            img_embed_size=128,
         ),
-    ),
-    dataset_holdout=d(
-        params=d(
-            file='data/hvsBlock3D/human_buds-kitchen_60k_eimgs.npz',
-            index_all_keys=False,
-            capacity=100000,
-            batch_size=16,
-            horizon=10,
-            batch_names_to_get=['robot0_eef_pos', 'policy_switch', 'action', 'robot0_gripper_qpos', 'policy_type',
-                                'image', 'ego_image'],
-        ),
+        device=F('device'),
     ),
 
+    # sequential dataset modifications (adding input file)
+    dataset_train=np_img_base_seq.export & d(
+        load_episode_range=[0.0, 0.9],
+        horizon=F('horizon'),
+        batch_size=F('batch_size'),
+        file=F('dataset', lambda x: f'data/hvsBlock3D/{x}.npz'),
+        batch_names_to_get=['robot0_eef_pos', 'robot0_gripper_qpos', 'action', 'image', 'ego_image'],
+    ),
+    dataset_holdout=np_img_base_seq.export & d(
+        load_from_base=True,
+        load_episode_range=[0.9, 1.0],
+        horizon=F('horizon'),
+        batch_size=F('batch_size'),
+        file=F('dataset', lambda x: f'data/hvsBlock3D/{x}.npz'),
+        batch_names_to_get=['robot0_eef_pos', 'robot0_gripper_qpos', 'action', 'image', 'ego_image'],
+    ),
     policy=d(
-        cls=GCBCPolicy,
-        params=d(
-            velact=True,
-            recurrent=True,
-            replan_horizon=10,
-            out_names=['action'],
-            out_norm_names=[],
-            fill_extra_policy_names=True,
-            online_action_postproc_fn=utils.default_online_action_postproc_fn,
-            is_terminated_fn=lambda model, obs, goal, mem,
-                                    **kwargs: False if mem.is_empty() else mem >> "count" >= 1200,
-        ),
+        online_action_postproc_fn=get_rs_online_action_postproc_fn(no_ori=True, fast_dynamics=True),
+        is_terminated_fn=get_timeout_terminate_fn(1200),
     ),
-    goal_policy=d(
-        cls=BasicPolicy,
-        params=d(
-            policy_model_forward_fn=lambda m, o, g, **kwargs: d(),
-            timeout=2,
-        ),
-    ),
-    trainer=d(
-        cls=GoalTrainer,
-        params=d(
-            max_steps=500000,
-            train_every_n_steps=1,
-            block_train_on_first_n_steps=0,
-            block_env_on_first_n_steps=20000,
-            random_policy_on_first_n_steps=0,
-            step_train_env_every_n_steps=0,
-            step_train_env_n_per_step=1,
-            step_holdout_env_every_n_steps=0,
-            step_holdout_env_n_per_step=1,
-            add_to_data_train_every_n_goals=0,
-            add_to_data_holdout_every_n_goals=0,
-            holdout_every_n_steps=50,
-            rollout_train_env_every_n_steps=20000,
-            rollout_train_env_n_per_step=50,
-            rollout_holdout_env_every_n_steps=0,
-            rollout_holdout_env_n_per_step=1,
-            no_data_saving=True,
-            train_do_data_augmentation=False,
-            load_statistics_initial=True,
-            reload_statistics_every_n_env_steps=0,
-            reload_statistics_n_times=0,
-            log_every_n_steps=1000,
-            save_every_n_steps=20000,
-            save_checkpoint_every_n_steps=100000,
-            save_data_train_every_n_steps=0,
-            save_data_holdout_every_n_steps=0,
-            checkpoint_model_file='model.pt',
-            save_checkpoints=True,
-            optimizer=d(
-                cls=SingleOptimizer,
-                params=d(
-                    max_grad_norm=None,
-                    get_base_optimizer=lambda p: torch.optim.Adam(p, lr=1e-4, betas=(0.9, 0.999), weight_decay=0),
-                ),
-            ),
-            trackers=reward_tracker.params,
-            write_average_episode_returns_every_n_env_steps=0,
-            track_best_name='env_train/returns',
-            track_best_key='returns',
-        ),
+    trainer=rm_goal_trainer.export & d(
+        max_steps=600000,
+        train_do_data_augmentation=F('augment'),
     ),
 )
-
-# parses supported values from command line
-params = parse_cfgs(params, get_config_args())

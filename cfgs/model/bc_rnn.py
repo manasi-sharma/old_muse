@@ -18,6 +18,7 @@ export = d(
     # names
     goal_names=['object'],
     state_names=['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos', 'object'],
+    extra_names=[],
 
     # encoders
     state_encoder_order=['proprio_encoder'],
@@ -32,7 +33,7 @@ export = d(
     action_decoder=d(
         exp_name='_{rnn_type}-hs{hidden_size}-ps{policy_size}{?use_policy_dist:-pd{policy_num_mix}}',
         cls=RNNActionDecoder,
-        input_names=F('../state_names'),
+        input_names=F(['../state_names', '../extra_names'], lambda s,e: s + e),
         action_names=['action'],
         rnn_type='lstm',
         use_policy_dist=F('../use_policy_dist'),

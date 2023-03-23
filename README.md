@@ -136,6 +136,7 @@ Scripts in `muse` follow a similar format, here are the basic ones that one migh
 - `scripts/resolve.py`: Resolve the configuration module, and print out the resulting parameters
 - `scripts/tests/load_batches.py`: Load a dataset module and load batches while timing things, as a way to debug dataset loading.
 - `scripts/eval.py`: Evaluate a model and policy in an environment.
+- `scripts/eval_video.py`: Evaluate a model and policy in an environment, and save only images to a dataset.
 - `scripts/collect.py`: Evaluate a model and policy in an environment, and also save it to dataset.
 - `scripts/interactive_collect.py`: Evaluate a model and policy in an environment, with a pygame window that lets you control which episode to keep, when to reset, etc
 
@@ -158,7 +159,11 @@ exp_name = root.get_exp_name()
 ```
 
 First we load local arguments for the script, then we load the config tree (see `configs/README.md`), and then we get an experiment name from the root config node.
-Usually following this you can use the `params` AttrDict to instantiate any groups that are needed for the script. `params` will take the form of:
+Note that the `load_base_config` function accepts local_args.config to be either a string specifying the path to a config, e.g. `cfgs/exp_hvs/square/bc_rnn.py`, 
+or an experiment folder prefixed by `exp=`, for example `exp=experiments/hvsBlock3D/velact_b256_h10_human_square_30k_bc-l2_lstm-hs400-ps0`. 
+In the latter case, additional command line args will be prepended from `<exp_folder/config_args.txt`, which the ExperimentFileManager auto generates with the command line args that come after the config file.
+
+Usually following header this you can use the `params` AttrDict to instantiate any groups that are needed for the script. `params` will take the form of:
 ```python
 from attrdict import AttrDict as d
 export = d(
@@ -178,3 +183,36 @@ export = d(
 )
 ```
 
+### Example: Training NutAssemblySquare with BC-RNN (state only)
+
+Assume we have a dataset `data/hvsBlock3D/human_square_30k.npz` for the robosuite `NutAssemblySquare` environment.
+
+
+#### Training
+
+To train BC-RNN with intermittent evaluation (every 20k steps by default), we can run:
+
+`python scripts/goal_train.py --wandb_tags square:bc cfgs/exp_hvs/square/bc_rnn.py`
+
+This command will create the following experiment folder: `experiments/hvsBlock3D/velact_b256_h10_human_square_30k_bc-l2_lstm-hs400-ps0`, populated with the following:
+- `models/`: This is where the models will be saved as `chkpt_<>.pt`, the latest one as `model.pt`, and the best performing one as `best_model.pt`
+- `config.py`: A copy of the input config, in this case `cfgs/exp_hvs/square/bc_rnn.py`
+- `config_args.txt`: If you added any arguments after the config, this file will be created.
+- `log_train.txt`: A log of the command line outputs that used `muse.experiments.logger`
+- `git/`: A folder with git checkpoint and diff
+- `loss.csv`: Not currently implemented.
+
+To disable wandb integration, remove the `--wandb_tags` command and add before the config `--no_wandb`, which switches the logging to tensorboard, with the events file located in the experiments folder.
+In either logging tool, for this config the `env_train/returns` will plot the average returns across 50 rollouts (see `cfgs/trainer/rm_goal_trainer.py`) using the latest model, by default every 20k steps.
+
+All arguments that are provided in the config that are float, bool, or int types can be edited via command line (see `configs/README.md`)
+for example if we want a larger hidden size for the RNN we can provide:
+
+`python scripts/goal_train.py --wandb_tags square:bc cfgs/exp_hvs/square/bc_rnn.py %model %%action_decoder --hidden_size 1000`
+
+#### Evaluation
+
+To evaluate 100 episodes while tracking returns on the above experiment, run the following
+`python scripts/eval.py --max_eps 100 --track_returns --exp=experiments/hvsBlock3D/velact_b256_h10_human_square_30k_bc-l2_lstm-hs400-ps0`
+
+To evaluate 100 episodes...

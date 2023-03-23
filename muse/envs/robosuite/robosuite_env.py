@@ -92,7 +92,7 @@ class RobosuiteEnv(Env):
         # logger.debug(f"Env config:\n{(json.dumps(env_kwargs, indent=4, sort_keys=True))}")
         if self._env_name == 'KitchenEnv':
             # loads the environments for zoo.
-            pass
+            import robosuite_task_zoo
         self._base_env = EnvRobosuite(self._env_name,
                                       render=self._render,
                                       render_offscreen=self._imgs,
@@ -354,6 +354,11 @@ class RobosuiteEnv(Env):
             action_names=["action", "policy_type", "policy_name", "policy_switch"],
             output_observation_names=["reward"]
         )
+
+        if name == 'KitchenEnv':
+            prms.observation_names = ["object", "robot0_eef_pos", "robot0_eef_eul", "robot0_eef_quat",
+                                      "robot0_gripper_qpos", "robot0_joint_pos"]
+            prms.output_observation_names = []
 
         if no_ori:
             if 'robot0_eef_quat' in prms.observation_names:

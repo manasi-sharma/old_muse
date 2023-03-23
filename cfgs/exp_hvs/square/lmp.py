@@ -15,7 +15,7 @@ from muse.policies.memory_policy import get_timeout_terminate_fn
 export = d(
     device="cuda",
     batch_size=256,
-    horizon=20,
+    horizon=10,
     dataset='human_square_30k',
     exp_name='hvsBlock3D/velact_b{batch_size}_h{horizon}_{dataset}',
     # utils=utils,

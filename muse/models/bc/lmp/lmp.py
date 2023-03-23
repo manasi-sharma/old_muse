@@ -32,6 +32,8 @@ class LMPBaseGCBC(BaseGCBC):
     ]
 
     def _init_params_to_attrs(self, params: d):
+        # tells forward fn to pre / post process only prior and decoder.
+        params.forward_models = ['prior'] + BaseGCBC.required_models
         super()._init_params_to_attrs(params)
 
         if self.optimize_prior:
@@ -230,16 +232,18 @@ class LMPBaseGCBC(BaseGCBC):
 
             # actually run the decoder using samples
             with timeit(f"lmp/{sample_source}_decoder"):
-                outputs[sample_source + "_decoder"] = self.action_decoder(policy_inputs, **kwargs)
-                outputs[f"{sample_source}_decoder"] = self.action_decoder(policy_inputs, **kwargs)
+                outputs[sample_source + "_decoder"] = self.action_decoder(policy_inputs, **self.get_kwargs('action_decoder', kwargs))
 
-        # move the policy outputs (either posterior / prior) to top level for optimization / policy to use
+        # move the policy outputs (either posterior / prior) to action_decoder for optimization / forward to use
         if not run_posterior_decoder or self.optimize_prior:
             # move the prior decoder output to the top level
-            outputs.combine(outputs.prior_decoder)
+            outputs['action_decoder'] = outputs.prior_decoder
         else:
             # move the posterior decoder output to the top level
-            outputs.combine(outputs.posterior_decoder)
+            outputs['action_decoder'] = outputs.posterior_decoder
+
+        # move action decoder outputs to top level
+        outputs.combine(outputs.action_decoder)
 
         return inputs & outputs
 

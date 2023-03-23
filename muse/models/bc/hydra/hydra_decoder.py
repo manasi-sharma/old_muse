@@ -1,3 +1,5 @@
+import random
+
 import torch
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
@@ -33,8 +35,11 @@ class HydraActionDecoder(ActionDecoder):
         # use a separate network for mode predictor.
         Argument("use_mode_predictor", action="store_true"),
 
+        # noise for ablations
         Argument('mode_classifier_noise', type=float, default=0.,
                  help='Noise to add to probabilities before arg-maxing'),
+        Argument('mode_classifier_flip_prob', type=float, default=0.,
+                 help='likelihood of flipping mode classifier likelihood'),
 
         # if not separate mode prediction, here are the args that define it.
         Argument("decoder_inter_size", type=int, default=128),
@@ -78,6 +83,12 @@ class HydraActionDecoder(ActionDecoder):
         self.sparse_raw_out_name = get_with_default(params, "sparse_raw_out_name", "sparse_policy_raw")
 
         super()._init_params_to_attrs(params)
+
+        # these are for various ablations.
+        if self.mode_classifier_flip_prob > 0:
+            logger.warn(f'Mode classifier using flip probability {self.mode_classifier_flip_prob}!')
+        if self.mode_classifier_noise > 0:
+            logger.warn(f'Mode classifier using uniform noise {self.mode_classifier_noise}!')
 
     def _init_action_caps(self):
         super()._init_action_caps()
@@ -166,6 +177,8 @@ class HydraActionDecoder(ActionDecoder):
             out['decoder'] = decoder_outs
             out = out & decoder_outs & mode_outs
             assert self.mode_classifier_noise == 0., "Mode classifier noise not implemented for separate network yet!"
+            assert self.mode_classifier_flip_prob == 0., \
+                "Mode classifier flip prob not implemented for separate network yet!"
         else:
             with timeit('mode_action_heads'):
                 # compute mode from inner model output partial embedding
@@ -183,6 +196,11 @@ class HydraActionDecoder(ActionDecoder):
                     # clip between 0 and 1.
                     probs[..., 0] = 1 - torch.relu(1 - torch.relu(probs[..., 0] - uniform))
                     probs[..., 1] = 1 - probs[..., 0]
+
+                if self.mode_classifier_flip_prob > 0:
+                    # flipping probabilities
+                    if random.random() < self.mode_classifier_flip_prob:
+                        probs = 1 - probs
 
                 out[self.mode_key] = torch.argmax(probs, dim=-1, keepdim=True)
 

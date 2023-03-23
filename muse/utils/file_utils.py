@@ -1,7 +1,6 @@
-import importlib.util
-import itertools
 import os
 import sys
+
 
 def file_path_with_default_dir(fname, default_dir, expand_user=True, mkdirs=False):
     if expand_user:
@@ -15,6 +14,7 @@ def file_path_with_default_dir(fname, default_dir, expand_user=True, mkdirs=Fals
             os.makedirs(default_dir, exist_ok=True)
         out_path = os.path.join(default_dir, fname)
     return out_path
+
 
 def get_size(obj, seen=None):
     """Recursively finds size of objects"""
@@ -35,6 +35,7 @@ def get_size(obj, seen=None):
     elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
         size += sum([get_size(i, seen) for i in obj])
     return size
+
 
 def prepend_to_base_name(path: str, prefix: str):
     if "/" in path:

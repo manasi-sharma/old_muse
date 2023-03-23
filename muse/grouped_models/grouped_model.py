@@ -3,9 +3,8 @@ from typing import List, Union, Iterable
 
 from muse.experiments import logger
 from muse.models.model import Model
-from muse.utils.param_utils import LayerParams
 from attrdict import AttrDict as d
-from attrdict.utils import get_or_instantiate_cls, get_with_default
+from attrdict.utils import get_with_default
 
 
 class GroupedModel(Model, Iterable):
@@ -29,6 +28,9 @@ class GroupedModel(Model, Iterable):
     def _init_params_to_attrs(self, params: d):
         super()._init_params_to_attrs(params)
         self._parse_models(params)
+
+        # model names that get used online
+        self.forward_models = get_with_default(params, "forward_models", list(self.required_models))
 
     def _parse_models(self, params):
         # all models passed in as AttrDict should be specified in model_order as string names
@@ -202,7 +204,7 @@ class GroupedModel(Model, Iterable):
 
         """
         names, pre_fns, post_fns = [], [], []
-        for n in self._model_order:
+        for n in self.forward_models:
             m = self[n]
             if hasattr(m, "get_default_mem_policy_forward_fn"):
                 pre_fn, post_fn, _ = m.get_default_mem_policy_forward_fn(*args, separate_fns=True, **kwargs)

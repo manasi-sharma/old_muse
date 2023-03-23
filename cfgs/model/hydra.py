@@ -2,12 +2,11 @@ from configs.fields import Field as F
 from muse.models.bc.hydra.hydra_decoder import HydraRNNActionDecoder
 from muse.models.bc.hydra.hydra_gcbc import HydraGCBC
 from muse.models.model import Model
-from muse.utils.general_utils import value_if_none
 from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
 from attrdict import AttrDict as d
 
 export = d(
-    exp_name='_hydra{?use_mode_predictor:-mp}-l2_g{gamma}_mb{mode_beta}',
+    exp_name='_hydra{?use_mode_predictor:-mp}-l2_g{gamma}_mb{mode_beta}{?label_smoothing:_ls{label_smoothing}}',
     cls=HydraGCBC,
     use_goal=False,
     use_last_state_goal=False,
