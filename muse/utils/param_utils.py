@@ -128,7 +128,7 @@ def build_mlp_param_list(in_features: int, layer_out_sizes: List[int], activatio
     return seq  # removed last activation
 
 
-def get_policy_dist_out_size(dim, prob=False, num_mix=1):
+def get_dist_out_size(dim, prob=False, num_mix=1):
     if prob:
         if num_mix > 1:
             return (2 * dim + 1) * num_mix
@@ -138,7 +138,7 @@ def get_policy_dist_out_size(dim, prob=False, num_mix=1):
         return dim
 
 
-def get_policy_dist_cap(prob, use_tanh_out, num_mix=1, policy_sig_min=1e-5, policy_sig_max=1e5):
+def get_dist_cap(prob, use_tanh_out, num_mix=1, sig_min=1e-5, sig_max=1e5):
     if not prob:
         # deterministic
         return LayerParams('tanh') if use_tanh_out else LayerParams('empty')
@@ -146,7 +146,7 @@ def get_policy_dist_cap(prob, use_tanh_out, num_mix=1, policy_sig_min=1e-5, poli
         # Gaussian
         return LayerParams("gaussian_dist_cap",
                            params=d(use_log_sig=False, use_tanh_mean=use_tanh_out, event_dim=0,
-                                    sig_min=policy_sig_min, sig_max=policy_sig_max))
+                                    sig_min=sig_min, sig_max=sig_max))
 
     else:
         # GMM
@@ -159,8 +159,7 @@ def get_policy_dist_cap(prob, use_tanh_out, num_mix=1, policy_sig_min=1e-5, poli
             is_categorical=True,  # learn the mixture weights
             base_dist=d(
                 cls=GaussianDistributionCap,
-                params=d(use_log_sig=False, use_tanh_mean=use_tanh_out, event_dim=1,
-                         sig_min=policy_sig_min, sig_max=policy_sig_max)
+                use_log_sig=False, use_tanh_mean=use_tanh_out, event_dim=1, sig_min=sig_min, sig_max=sig_max
             ),
         ))
 
@@ -170,13 +169,12 @@ def add_policy_dist_cap(network: SequentialParams, num_mix, use_tanh_out, hidden
     """
     Adds a linear map + gaussian dist cap to existing SequentialParams.
     """
-    assert num_mix >=1, f"{num_mix} must be >= 1"
+    assert num_mix >= 1, f"{num_mix} must be >= 1"
 
     # layer param list, except the last linear layer and optional tanh layer
     base_layers = network.params[:-1 - int(use_tanh_out)]
-    cap = get_policy_dist_cap(True, use_tanh_out, num_mix=num_mix,
-                              policy_sig_min=policy_sig_min, policy_sig_max=policy_sig_max)
-    raw_out_size = get_policy_dist_out_size(policy_out_size, prob=True, num_mix=num_mix)
+    cap = get_dist_cap(True, use_tanh_out, num_mix=num_mix, sig_min=policy_sig_min, sig_max=policy_sig_max)
+    raw_out_size = get_dist_out_size(policy_out_size, prob=True, num_mix=num_mix)
     layers = base_layers + [
         LayerParams("linear", in_features=hidden_size, out_features=raw_out_size,
                     bias=True),

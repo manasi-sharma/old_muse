@@ -14,7 +14,9 @@ export = sq_bc_rnn.export & d(
     env_spec=RobosuiteEnv.get_default_env_spec_params(tool_hang.export),
     env_train=tool_hang.export,
     model=d(
-        hidden_size=1000,
+        action_decoder=d(
+            hidden_size=1000,
+        )
     ),
 
     policy=d(

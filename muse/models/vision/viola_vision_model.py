@@ -1,15 +1,14 @@
 import os
 
 import numpy as np
-from muse.models.vision.vision_core import PaddedCropRandomizer
 import torch
 import torch.nn.functional as F
 
 from muse.experiments import logger
 from muse.experiments.file_manager import FileManager
-from muse.models.basic_model import BasicModel
 from muse.models.pretrained.detic import DeticPredictor, get_proposal_cfg
-from muse.models.vision import vision_encoders as ve
+from muse.models.vision.vision_encoder import VisionEncoder
+from muse.utils.abstract import Argument
 from muse.utils.general_utils import timeit
 from muse.utils.torch_utils import combine_dims, split_dim, to_numpy
 from muse.models.layers.common import SpatialProjection, BBoxTrueSinusoidalPositionEncodingFactor, RoIAlignWrapper
@@ -23,20 +22,31 @@ from attrdict.utils import get_with_default
 DETIC_ROOT = os.path.join(FileManager.base_dir, '../VIOLA/third_party/Detic')
 
 
-class VIOLAVisionModel(BasicModel):
+class VIOLAVisionEncoder(VisionEncoder):
     """
     VIOLA Vision model, which computes embeddings using image and ego image.
 
-    Make sure not to put any extra randomizers in params.network. VIOLA handles that separately.
+    Make sure not to allow VisionCore net to flip, VIOLA handles that separately.
+
     """
 
+    predefined_arguments = VisionEncoder.predefined_arguments + [
+        Argument('embed_size', type=int, default=64, help="the projection size for the rpn features"),
+        Argument('top_k', type=int, default=20, help="how many bounding boxes per image to use"),
+    ]
+
     def _init_params_to_attrs(self, params):
-        params.network = get_with_default(params, "network", ve.get_reset18_partial_embedding_layer())
-        super()._init_params_to_attrs(params)
         # self.net should output partial embedding (still in image shape)
+        super()._init_params_to_attrs(params)
 
         assert len(self.inputs) == 2, "Accepts two images as inputs!"
         assert self.call_separate, "The two images must be processed separately"
+
+        if self.call_separate and not self.use_shared_params:
+            for net in self.net:
+                assert not net.flip, "Vision Cores must have flip=False, VIOLA handles that internally"
+        else:
+            assert not self.net.flip, "Vision Core must have flip=False, VIOLA handles that internally"
 
         # config for detic
         self.rpn_predictor_cfg = get_with_default(params, 'rpn_predictor_cfg', get_proposal_cfg(DETIC_ROOT))
@@ -53,63 +63,37 @@ class VIOLAVisionModel(BasicModel):
         self.rpn_score_output_key = get_with_default(params, 'rpn_score_output_key', "scores")
         self.rpn_bbox_output_key = get_with_default(params, 'rpn_bbox_output_key', "boxes")
 
-        # the projection size for the rpn features
-        self.embed_size = get_with_default(params, "embed_size", 64)
-
-        self.top_k = get_with_default(params, "top_k", 20)
-
         # for self.align
         self.alignment_output_size = list(get_with_default(params, "alignment_output_size", (6, 6)))
 
         # ordered strictly
-        self.img_shape = self.env_spec.names_to_shapes[self.inputs[0]]
-        self.ego_img_shape = self.env_spec.names_to_shapes[self.inputs[1]]
-        
-        self.downsample_frac = get_with_default(params, 'downsample_frac', 1.0)
-        if self.downsample_frac < 1.0:
-            self.downsampler = ve.get_downsampler(self.img_shape, self.downsample_frac)
-            self.ego_downsampler = ve.get_downsampler(self.ego_img_shape, self.downsample_frac)
-            self.img_shape = np.asarray(self.img_shape).copy()
-            self.img_shape[:2] = np.round(self.img_shape[:2] * self.downsample_frac).astype(int)
-            self.ego_img_shape = np.asarray(self.ego_img_shape).copy()
-            self.ego_img_shape[:2] = np.round(self.ego_img_shape[:2] * self.downsample_frac).astype(int)
-            logger.debug(f'Downsampling images by {self.downsample_frac}: to img={self.img_shape} and ego={self.ego_img_shape}')
-            
-        # augmentation
-        self.crop_pad_len = 2
-        self.img_randomizers = get_with_default(params, "img_randomizers", 
-                                                [ve.get_padded_crop_randomizer(self.img_shape, self.crop_pad_len)])
-        self.ego_img_randomizers = get_with_default(params, "ego_img_randomizers", 
-                                                    [ve.get_padded_crop_randomizer(self.ego_img_shape, self.crop_pad_len)])
+        self.true_img_shape = self.image_shapes[0]
+        self.true_ego_img_shape = self.image_shapes[1]
 
-        # this is the shape post cropping, TODO make this better.
-        if len(self.img_randomizers) > 0 and not isinstance(self.img_randomizers[0], PaddedCropRandomizer):
-            raise NotImplementedError('Img Cannot use a non-padded crop randomizer bc it will change the size!')
-        if len(self.ego_img_randomizers) > 0 and not isinstance(self.ego_img_randomizers[0], PaddedCropRandomizer):
-            raise NotImplementedError('Ego Img cannot use a non-padded crop randomizer bc it will change the size!')
+        self.img_shape = self.randomizer_in_output_shapes[0]
+        self.ego_img_shape = self.randomizer_in_output_shapes[1]
 
-        self.img_h, self.img_w = self.img_shape[:2]
+        assert len(self.output_shapes[0]) == 3, "Net should output a partial embedding!"
+
+    def _add_outputs_to_spec(self):
+        raise NotImplementedError('VIOLA NEEDS THIS')
 
     def _init_setup(self):
         super()._init_setup()
         
-        # what comes out of encoder, should be an image
-        self.enc_out_c, self.enc_out_h, self.enc_out_w = ve.resnet18_compute_output_shape(self.img_shape, cut_last=4)
-        self.ego_enc_out_c, self.ego_enc_out_h, self.ego_enc_out_w = ve.resnet18_compute_output_shape(self.ego_img_shape, cut_last=4)
-
         logger.debug(f"Assuming encoding of shape ({self.enc_out_c}, {self.enc_out_h}, {self.enc_out_w})")
 
         # TODO parameterize all of these.
         # extra layer for spatial + projection on images
         self.spatial_projection = SpatialProjection(
-            (self.enc_out_c, self.enc_out_h, self.enc_out_w), num_kp=self.embed_size // 2, out_dim=self.embed_size)
+            self.output_shapes[0], num_kp=self.embed_size // 2, out_dim=self.embed_size)
 
         # likewise, but for projecting ego image
         if self.use_shared_params:
             self.ego_spatial_projection = self.spatial_projection
         else:
             self.ego_spatial_projection = SpatialProjection(
-                (self.ego_enc_out_c, self.ego_enc_out_h, self.ego_enc_out_w), num_kp=self.embed_size // 2, out_dim=self.embed_size)
+                self.output_shapes[1], num_kp=self.embed_size // 2, out_dim=self.embed_size)
 
         # RPN, should not be loaded so we put it in a list (hacky)
         self.rpn_predictor_reference = [DeticPredictor(self.rpn_predictor_cfg, input_format=self.rpn_input_format, permuted=True)]
@@ -120,8 +104,9 @@ class VIOLAVisionModel(BasicModel):
                                                                   factor_ratio=1.)
 
         # alignment btwn image and bboxes
-        logger.debug(f"[VIOLA] ROI pooling using scale: {self.enc_out_h / self.img_h}")
-        self.align = RoIAlignWrapper(output_size=self.alignment_output_size, spatial_scale=self.enc_out_h / self.img_h, sampling_ratio=-1)
+        spatial_scale = self.output_shapes[0][1] / self.image_shapes[0][1]
+        logger.debug(f"[VIOLA] ROI pooling using scale: {spatial_scale}")
+        self.align = RoIAlignWrapper(output_size=self.alignment_output_size, spatial_scale=spatial_scale, sampling_ratio=-1)
 
         # project bounding boxes down to flat feature vectors.
         self.projection = torch.nn.Sequential(
@@ -198,7 +183,7 @@ class VIOLAVisionModel(BasicModel):
                     bbox_h = self.precompute_rpn_boxes(datasets_holdout[0], self.rpn_holdout_preload_path)
                     datasets_holdout[0].add_key_to_dataset(self.bbox_key, bbox_h)
 
-    def forward(self, inputs, training=False, preproc=True, postproc=True, timeit_prefix="viola_vision/",
+    def forward(self, inputs, training=False, preproc=True, postproc=True, timeit_prefix="viola/",
                 do_rpn=None, rpn_only=False, **kwargs):
         """ NOTE: slow when do_rpn=True """
 
@@ -224,17 +209,14 @@ class VIOLAVisionModel(BasicModel):
             img, ego_img = inputs.get_keys_required(self.inputs)
             img, front_shape = self._preproc_img(img)
             ego_img, _ = self._preproc_img(ego_img)
-            
-            if self.downsample_frac < 1.0:
-                img = self.downsampler.forward_in(img)
-                ego_img = self.ego_downsampler.forward_in(ego_img)
 
             if not rpn_only:
-                # randomization on images
-                for r in self.img_randomizers:
+                # run randomizer on input images
+                for r in self.net.randomizers:
                     img = r.forward_in(img)
-                for r in self.ego_img_randomizers:
                     ego_img = r.forward_in(ego_img)
+
+            """ RPN processing """
 
             if do_rpn:
                 with timeit("viola/rpn"):
@@ -245,7 +227,7 @@ class VIOLAVisionModel(BasicModel):
                     B = min(in_img.shape[0], 10)
                     outputs = []
                     for j in range(in_img.shape[0] // B):
-                        outputs.extend(self.rpn_predictor(in_img[B * j:B * (j+1)]))
+                        outputs.extend(self.rpn_predictor(in_img[B * j:B * (j + 1)]))
 
                 with timeit("viola/rpn_postproc"):
                     # go through batches, computing the valid ones
@@ -265,7 +247,7 @@ class VIOLAVisionModel(BasicModel):
                     bbox = torch.stack(topk_boxes)
             else:
                 # get rpn bboxes from input, flatten first two dims
-                bbox = combine_dims(inputs[self.bbox_key], 0, 2)
+                bbox = combine_dims(inputs >> self.bbox_key, 0, 2)
 
         if not rpn_only:
             # encode (partially) using net
@@ -277,13 +259,12 @@ class VIOLAVisionModel(BasicModel):
                     # index into module dict if separate
                     encoder_net_i = self.net if self.use_shared_params else self.net[i]
                     out_ls.append(encoder_net_i(eo))
-                    assert len(out_ls[i].shape) == len(eo.shape), f"[VIOLAVision]: net {i} reduced the shape of the image!"
+                    assert len(out_ls[i].shape) == len(eo.shape), \
+                        f"[VIOLAVision]: net {i} should produce an image-like tensor but was {out_ls[i].shape}!"
 
-            # randomization on images (out)
-            for r in self.img_randomizers[::-1]:
-                out_ls[0] = r.forward_out(out_ls[0])
-            for r in self.ego_img_randomizers[::-1]:
-                out_ls[1] = r.forward_out(out_ls[1])
+                    # (out) randomization on images
+                    for r in encoder_net_i.randomizers[::-1]:
+                        out_ls[i] = r.forward_out(out_ls[i])
 
             # finishing projection for image and ego_image
             img_embed = self.spatial_projection(out_ls[0])
@@ -303,7 +284,8 @@ class VIOLAVisionModel(BasicModel):
 
             # aggregate the image embedding with the positional one. this is a huge tensor
             # (n_embed + n_embed + K * n_embed)
-            full_embedding = torch.cat([img_embed.unsqueeze(1), ego_img_embed.unsqueeze(1), position_embedding_out], dim=1)
+            full_embedding = torch.cat([img_embed.unsqueeze(1), ego_img_embed.unsqueeze(1), position_embedding_out],
+                                       dim=1)
 
             # outputs will be (B x H x c x h x w) for images/bboxes, and (B x H x D) for tensors
             out &= AttrDict.from_dict({

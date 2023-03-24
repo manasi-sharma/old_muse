@@ -43,11 +43,11 @@ class HYDRAPolicy(GCBCPolicy):
     def default_mem_policy_model_forward_fn(self, model, obs: d, goal: d, memory: d, known_sequence=None, **kwargs):
         # set the forward fn from the model
         if self.model_forward_fn is None:
-            self.model_forward_fn = model.__class__.get_default_mem_policy_forward_fn(self.replan_horizon,
-                                                                                      self._policy_out_names,
-                                                                                      recurrent=self.recurrent,
-                                                                                      sample_plan=self.sample_plan,
-                                                                                      flush_horizon=self.flush_horizon)
+            self.model_forward_fn = model.get_default_mem_policy_forward_fn(self.replan_horizon,
+                                                                            self._policy_out_names,
+                                                                            recurrent=self.recurrent,
+                                                                            sample_plan=self.sample_plan,
+                                                                            flush_horizon=self.flush_horizon)
 
         obs = obs.leaf_arrays().leaf_apply(lambda arr: arr.to(dtype=torch.float32))
         goal = goal.leaf_arrays().leaf_apply(lambda arr: arr.to(dtype=torch.float32))
@@ -66,7 +66,8 @@ class HYDRAPolicy(GCBCPolicy):
 
             unnorm_out = model.normalize_by_statistics(out,
                                                        self._policy_out_norm_names,
-                                                       inverse=True) > (self._policy_out_names + self._sparse_policy_out_names)
+                                                       inverse=True) > (
+                                     self._policy_out_names + self._sparse_policy_out_names)
 
             if not self.velact:
                 is_dense_mode = False
@@ -79,7 +80,8 @@ class HYDRAPolicy(GCBCPolicy):
                 # NEW WAYPOINT
                 memory.curr_norm_waypoint_dict = (out > self._sparse_policy_out_names).leaf_apply(
                     lambda arr: arr.clone())
-                memory.curr_waypoint = combine_then_concatenate(unnorm_out, self._sparse_policy_out_names, dim=1).reshape(-1)
+                memory.curr_waypoint = combine_then_concatenate(unnorm_out, self._sparse_policy_out_names,
+                                                                dim=1).reshape(-1)
                 # print(memory.curr_waypoint)
                 if self.skip_online_hidden_state:
                     # record the hidden state here. policy will use this.

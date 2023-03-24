@@ -1,6 +1,5 @@
 import importlib
 import os
-import re
 from collections import OrderedDict
 from pydoc import locate
 from typing import List
@@ -17,10 +16,43 @@ def hr_name(float_arg, fp=None):
     return str(float_arg).replace('.', '_')
 
 
+def find_innermost_brackets(string, open='{', close='}'):
+    """ Returns the first open close segment.
+
+    Will raise exceptions if only one of open or close is found
+
+    Parameters
+    ----------
+    string
+    open
+    close
+
+    Returns
+    -------
+    indices: Tuple[int, int] or none
+        The indices of the brackets (start and end)
+
+    """
+    # replace first full open close
+    first_close = string.find(close)
+    if first_close == -1:
+        assert string.find(open) == -1, f"Open {open} was found but close {close} was not!"
+        return None
+
+    last_open = None
+    for j in range(first_close):
+        if string[j] == open:
+            last_open = j
+
+    assert last_open is not None, f"Close {close} was found but open {open} was not!"
+    return last_open, first_close
+
+
 def find_replace_brackets(string, params, fp=None):
-    pattern = '{([^{]+)}'
-    while re.search(pattern, string) is not None:
-        s = re.search(pattern, string).group(1)
+    while (group := find_innermost_brackets(string)) is not None:
+        # get what is inside the brackets
+        s = string[group[0]+1: group[1]]
+        # this might get modified
         name = str(s)
 
         # bool argument replace with name if True else nothing.
@@ -53,7 +85,7 @@ def find_replace_brackets(string, params, fp=None):
             string_value = hr_name(string_value, fp=fp)
         else:
             string_value = str(string_value)
-        string = string.replace(f'{{{s}}}', string_value)
+        string = string[:group[0]] + string_value + string[group[1] + 1:]
 
     return string
 
@@ -246,6 +278,8 @@ if __name__ == '__main__':
     fdc = d(
         real_arg1=1,
         real_arg2=10.,
+        use_extra_name=True,
+        extra_arg=4,
         group1=d(
             cls=1,
             arg1=2,
@@ -259,4 +293,4 @@ if __name__ == '__main__':
     print(f'locals -> {loc.pprint(ret_string=True)}')
     print(f'groups -> {grp.pprint(ret_string=True)}')
 
-    print('exp_name:', find_replace_brackets('test_{real_arg1}-{real_arg2}', fdc))
+    print('exp_name:', find_replace_brackets('test_{real_arg1}-{real_arg2}{?use_extra_name:-extra{extra_arg}}', fdc))

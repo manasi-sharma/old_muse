@@ -4,8 +4,12 @@ import torch
 from muse.envs.mode_param_spec import BiModalParamEnvSpec
 from muse.utils.general_utils import is_array
 from muse.utils.np_utils import clip_norm, clip_scale
-from muse.utils.torch_utils import to_numpy, to_torch
+from muse.utils.torch_utils import to_numpy, to_torch, cat_any
 import muse.utils.transform_utils as T
+
+
+GRIPPER_WIDTH_TOL = 0.05
+GRIPPER_WIDTH_DELTA_TOL = 1e-3
 
 
 def parse_orientations(unnorm_out, targ_prefix):
@@ -95,7 +99,7 @@ def get_wp_dynamics_fn(fast_dynamics=True, no_ori=False, max_pos_vel=0.4, max_or
 
             reached = (np.linalg.norm(dpos, axis=-1) < TOL)
             if no_ori:
-                mode1_action = np.concatenate([unscaled_dpos, unscaled_dori, goal_gr], axis=-1)
+                mode1_action = np.concatenate([unscaled_dpos, goal_gr], axis=-1)
             else:
                 mode1_action = np.concatenate([unscaled_dpos, unscaled_dori, goal_gr], axis=-1)
                 reached = reached & (np.abs(q_angle) < ORI_TOL)
@@ -236,17 +240,47 @@ def modify_spec_prms(prms, no_names=False, raw=False, minimal=False, no_reward=F
 
         # change to support mode0 and mode1 actions (HYDRA)
         prms.cls = BiModalParamEnvSpec
-        prms.mode0_action_names = ['target/position', 'target/orientation', 'target/orientation_eul']
+        prms.mode0_action_names = ['target/position']
         prms.mode1_action_names = ['action']
-        prms.dynamics_state_names = ["robot0_eef_pos", "robot0_eef_quat", "robot0_eef_eul"]
+        prms.dynamics_state_names = ["robot0_eef_pos"]
+        if 'robot0_eef_quat' in prms.observation_names:
+            prms.mode0_action_names.extend(['target/orientation', 'target/orientation_eul'])
+            prms.dynamics_state_names.extend(["robot0_eef_quat", "robot0_eef_eul"])
 
     if include_real:
         prms.observation_names.append('real')
 
     if include_target_names:
-        prms.action_names.extend(['target/position', 'target/orientation', 'target/orientation_eul'])
+        prms.action_names.append('target/position')
+        if 'robot0_eef_quat' in prms.observation_names:
+            prms.action_names.extend(['target/orientation', 'target/orientation_eul'])
 
     if include_target_gripper:
         prms.action_names.extend(['target/gripper'])
 
     return prms
+
+
+def rs_gripper_width_as_contact_fn(inputs):
+    """
+    Takes an episode
+
+    Parameters
+    ----------
+    self
+    inputs
+
+    Returns
+    -------
+
+    """
+    c0 = inputs.robot0_gripper_qpos[..., 0]
+    c1 = inputs.robot0_gripper_qpos[..., 1]
+
+    gw = c1 - c0
+
+    contact = np.abs(gw) < GRIPPER_WIDTH_TOL
+    return contact
+
+
+

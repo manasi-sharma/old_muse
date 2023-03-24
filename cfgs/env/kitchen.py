@@ -1,6 +1,5 @@
-from attrdict import AttrDict as d
-
 from muse.envs.robosuite.robosuite_env import RobosuiteEnv
+from attrdict import AttrDict as d
 
 export = d(
     cls=RobosuiteEnv,

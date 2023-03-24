@@ -23,7 +23,7 @@ class USBCamera(Sensor):
         self.vcap = cv2.VideoCapture(self.cv_cam_id)
         self.vcap.set(3, self.W)
         self.vcap.set(4, self.H)
-        # self.vcap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # no queue
+        self.vcap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # no queue
         # self.q = queue.Queue()
         # t = threading.Thread(target=self._reader)
         # t.daemon = True
@@ -32,23 +32,28 @@ class USBCamera(Sensor):
             pass
         logger.debug("USB camera opened.")
 
-    # # Read frames as soon as they are available, keeping only most recent one!
-    # def _reader(self):
-    #     while True:
-    #         ret, frame = self.vcap.read()
-    #         if not ret:
-    #             break
-    #         if not self.q.empty():
-    #             try:
-    #                 self.q.get_nowait()   # discard previous (unprocessed) frame
-    #             except queue.Empty:
-    #                 pass
-    #         self.q.put(frame)
+    # Read frames as soon as they are available, keeping only most recent one!
+    def _reader(self, t=None):
+        start_time = time.time()
+        while not t or time.time() - start_time < t:
+            ret, frame = self.vcap.read()
+            if not ret:
+                break
+            # if not self.q.empty():
+            #     try:
+            #         self.q.get_nowait()   # discard previous (unprocessed) frame
+            #     except queue.Empty:
+            #         pass
+            # self.q.put(frame)
 
     def read_state(self, **kwargs) -> AttrDict:
         # self.frame = self.q.get()
         ret, self.frame = self.vcap.read()
         return AttrDict(frame=self.frame)
+
+    def reset(self):
+        # flush
+        self._reader(0.1)
 
     def close(self):
         self.vcap.release()

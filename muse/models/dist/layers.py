@@ -169,7 +169,7 @@ class SquashedGaussianDistributionCap(DistributionCap):
 class CategoricalDistributionCap(DistributionCap):
     def _init_params_to_attrs(self, params):
         super(CategoricalDistributionCap, self)._init_params_to_attrs(params)
-        self.num_bins = int(get_required(params, "num_bins"))
+        self.num_bins = int(params["num_bins"])
 
     def forward(self, x, **kwargs):
         # x should be (..., num_bins)
@@ -191,7 +191,7 @@ class CategoricalDistributionCap(DistributionCap):
 class MixedDistributionCap(DistributionCap):
     def _init_params_to_attrs(self, params):
         super(MixedDistributionCap, self)._init_params_to_attrs(params)
-        self.num_mix = int(get_required(params, "num_mix"))
+        self.num_mix = int(params["num_mix"])
         assert self.num_mix > 0
         self.split_dim = get_with_default(params, "split_dim", -1, map_fn=int)
         self.chunk_dim = get_with_default(params, "chunk_dim", -1, map_fn=int)

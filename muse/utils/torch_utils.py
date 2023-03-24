@@ -1,4 +1,5 @@
 import sys
+from numbers import Number
 
 import numpy as np
 import torch
@@ -84,6 +85,15 @@ def dc_add_horizon_dim(dc):
 # batch on AttrDict
 def dc_add_batch_dim(dc):
     return dc.leaf_apply(lambda arr: arr[None])
+
+
+def to_scalar(arr):
+    if isinstance(arr, Number):
+        return arr
+    elif is_array(arr):
+        return arr.mean().item()
+    else:
+        raise NotImplementedError(f"Non-scalar: {type(arr)}")
 
 
 def expand_at_single(x, size, dim):

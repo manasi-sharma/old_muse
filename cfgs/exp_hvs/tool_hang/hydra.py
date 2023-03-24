@@ -23,19 +23,19 @@ export = sq_hydra.export & d(
     env_train=tool_hang.export,
     horizon=20,
     model=d(
-        hidden_size=1000,
-        inner_hidden_size=1000,
-        sparse_mlp_size=400,
-        policy_size=400,
-        use_smooth_mode=False,
+        gamma=0.25,
         mode_beta=0.1,
+        use_smooth_mode=False,
+        head_size=400,
+        action_decoder=d(
+            hidden_size=1000,
+        ),
     ),
 
     policy=d(
         is_terminated_fn=get_timeout_terminate_fn(700),
     ),
     trainer=d(
-        holdout_every_n_steps=36,
         rollout_train_env_n_per_step=36,
     ),
 )

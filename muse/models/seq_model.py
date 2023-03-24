@@ -77,7 +77,7 @@ class SequenceModel(BasicModel):
 
                 memory.count = 0  # total steps
 
-                # list of inputs, shape (B x 1 x ..), will be concatenated latervi
+                # list of inputs, shape (B x 1 x ..), will be concatenated later
                 memory.input_history = [model.get_online_inputs(inputs) for _ in range(horizon)]
 
                 # avoid allocating memory again

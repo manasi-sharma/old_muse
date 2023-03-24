@@ -11,7 +11,9 @@ from typing import List
 from muse.envs.param_spec import ParamEnvSpec
 from muse.experiments import logger
 from muse.models.model import Model
-from muse.utils.param_utils import SequentialParams, LayerParams
+from muse.utils.abstract import Argument
+from muse.utils.param_utils import SequentialParams, LayerParams, build_mlp_param_list, get_dist_out_size, \
+    get_dist_cap
 from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
@@ -98,7 +100,10 @@ class BasicModel(Model):
                 encoder_net_i = net if use_shared_params else net[i]
                 out_ls.append(encoder_net_i(eo))
 
-        out = AttrDict({output_name: torch.cat(out_ls, dim=concat_dim)})
+        if len(out_ls) == 1:
+            out = AttrDict({output_name: out_ls[0]})
+        else:
+            out = AttrDict({output_name: torch.cat(out_ls, dim=concat_dim)})
 
         return postproc_fn(inputs, out) if postproc_fn else out
 
@@ -121,35 +126,96 @@ class BasicModel(Model):
                                          **kwargs)
 
     @staticmethod
-    def get_default_mem_policy_forward_fn(*args, add_goals_in_hor=False, **kwargs):
+    def get_default_mem_policy_forward_fn(*args, add_goals_in_hor=False, separate_fns=False, **kwargs):
+        """ Basic Model forward.
 
-        # online execution using MemoryPolicy or subclass
-        def mem_policy_model_forward_fn(model: BasicModel, obs: AttrDict, goal: AttrDict, memory: AttrDict,
-                                        root_model: Model = None, **inner_kwargs):
+        Parameters
+        ----------
+        args
+        add_goals_in_hor
+        separate_fns: Will return [pre_forward, post_forward, and (all together) forward_fn]
+        kwargs
+
+        Returns
+        -------
+        forward_fn or [pre_forward, post_forward, and (all together) forward_fn]
+
+        """
+
+        # any actions before forward (e.g. updating memory, updating inner_kwargs)
+        def pre_forward_fn(model: BasicModel, obs: AttrDict, goal: AttrDict, memory: AttrDict, **inner_kwargs):
             obs = obs.leaf_copy()
-            if memory.is_empty():
+            if 'count' not in memory.keys():
                 memory.count = 0
 
             if not add_goals_in_hor and not goal.is_empty():
                 obs.goal_states = goal
 
             memory.count += 1
+            return obs, goal, memory, inner_kwargs
+
+        def post_forward_fn(model, out, obs, goal, memory):
+            return model.online_postproc_fn(model, out, obs, goal, memory)
+
+        # online execution using MemoryPolicy or subclass
+        def mem_policy_model_forward_fn(model: BasicModel, obs: AttrDict, goal: AttrDict, memory: AttrDict,
+                                        root_model: Model = None, **inner_kwargs):
+
+            obs, goal, memory, inner_kwargs = pre_forward_fn(model, obs, goal, memory, **inner_kwargs)
 
             # normal policy w/ fixed plan, we use prior, doesn't really matter here tho since run_plan=False
             base_model = (model if root_model is None else root_model)
             out = base_model.forward(obs, **inner_kwargs)
-            return base_model.online_postproc_fn(model, out, obs, goal, memory, **inner_kwargs)
+            return post_forward_fn(model, out, obs, goal, memory)
 
-        return mem_policy_model_forward_fn
+        if separate_fns:
+            return pre_forward_fn, post_forward_fn, mem_policy_model_forward_fn
+        else:
+            return mem_policy_model_forward_fn
 
-    def print_parameters(self, prefix="", print_fn=logger.debug):
-        print_fn(prefix + "[BasicModel]")
-        for n, p in self.named_parameters():
-            print_fn(prefix + "[BasicModel] %s <%s> (requires_grad = %s)" % (n, list(p.shape), p.requires_grad))
+
+class DefaultMLPModel(BasicModel):
+    predefined_arguments = BasicModel.predefined_arguments + [
+        Argument("in_size", type=int, default=None),
+        Argument("out_size", type=int, default=None),
+        Argument("dropout_p", type=float, default=0),
+        Argument("mlp_size", type=int, default=128),
+        Argument("mlp_depth", type=int, default=3),
+
+        Argument("use_tanh_out", action="store_true"),
+        Argument("use_dist", action="store_true"),
+        Argument("num_mix", type=int, default=1),
+        Argument("use_dist_mean", action="store_true"),
+        Argument("sig_min", type=float, default=1e-5),
+        Argument("sig_max", type=float, default=1e3),
+    ]
+
+    def _init_params_to_attrs(self, params):
+        self.read_predefined_params(params)
+
+        if self.in_size is None:
+            self.in_size = self.env_spec.dim(params.model_inputs)
+        if self.out_size is None:
+            self.out_size = self.env_spec.dim(params.model_output)
+
+        if self.use_dist:
+            self.out_size = get_dist_out_size(self.out_size,
+                                              prob=self.use_dist, num_mix=self.num_mix)
+
+        # optional cap
+        cap = get_dist_cap(self.use_dist, self.use_tanh_out, num_mix=self.num_mix, sig_min=self.sig_min,
+                           sig_max=self.sig_max)
+
+        params.network = get_with_default(params, "network", SequentialParams(
+            build_mlp_param_list(self.in_size, [self.mlp_size] * self.mlp_depth + [self.out_size],
+                                 dropout_p=self.dropout_p) + [cap]))
+
+        super()._init_params_to_attrs(params)
 
 
 if __name__ == '__main__':
     from torch.utils.tensorboard import SummaryWriter
+
     md = BasicModel(AttrDict(model_inputs=["ins"], model_output="out", device="cpu", normalization_inputs=[],
                              network=SequentialParams([
                                  LayerParams("linear", in_features=5, out_features=10),

@@ -22,7 +22,7 @@ class NpDataset(Dataset):
     """
     This is the default dataset that you can use for most experiments.
 
-    It stores and reads from .npz files.
+    It stores and reads from .npz files, all in memory.
     """
 
     # # @abstract.overrides
@@ -170,7 +170,13 @@ class NpDataset(Dataset):
 
         self._data_setup()
 
-    def _data_setup(self):
+    def _period_setup(self):
+        """ Set up the periods for sampling.
+        
+        Returns
+        -------
+
+        """
         # static sampling likelihoods
         self._period_lengths = np.array([self.period_length(i) for i in range(self.get_num_periods())])
         # if padding end, use period_lengths, else period_lengths - H : for sampling padding.
@@ -184,6 +190,9 @@ class NpDataset(Dataset):
             self._period_probs = 1 / self._sampling_period_lengths
         self._period_probs /= self._period_probs.sum()
 
+    def _data_setup(self):
+        self._period_setup()
+        
         if self._index_all_keys:
             logger.debug("Merging datasets...")
             self._merged_datadict_keys = self._datadict.list_leaf_keys()
@@ -1026,6 +1035,9 @@ class NpDataset(Dataset):
     def __iter__(self):
         while True:
             yield self._get_batch()
+
+    def __getitem__(self, item):
+        raise NotImplementedError
 
     # @abstract.overrides
     def get_batch(self, indices=None, torch_device=None, min_idx=0, max_idx=0, do_async=True, local_batch_size=None,

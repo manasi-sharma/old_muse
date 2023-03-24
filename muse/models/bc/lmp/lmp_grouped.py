@@ -5,6 +5,7 @@ from typing import Callable
 
 from muse.experiments import logger
 from muse.grouped_models.grouped_model import GroupedModel
+from muse.utils.abstract import Argument
 from muse.utils.general_utils import timeit, is_next_cycle
 
 from attrdict import AttrDict as d
@@ -47,6 +48,12 @@ class LMPGroupedModel(GroupedModel):
 
     """
 
+    predefined_arguments = GroupedModel.predefined_arguments + [
+        Argument('beta', type=float, default=1e-2),
+        Argument('beta_info', type=float, default=0.),
+        Argument('plan_size', type=int, default=64),
+    ]
+
     required_models = ["goal_selector",
                        "posterior_input_selector",
                        "prior_input_selector",
@@ -64,16 +71,14 @@ class LMPGroupedModel(GroupedModel):
     def _init_params_to_attrs(self, params: d):
         super(LMPGroupedModel, self)._init_params_to_attrs(params)
 
-        # PARAMS
-        self.beta = get_with_default(params, "beta", 1.0)
-        self.beta_schedule = 1.  # default is 100% of beta
-        self.beta_info = get_with_default(params, "beta_info", 0.)
+        # scale term on beta to change, default is 100% of beta
+        self.beta_schedule = 1.
 
         # represents the minimum horizon to use for recognition & policy sequences.
         self.horizon = params["horizon"]
         self.min_horizon = get_with_default(params, "min_horizon", self.horizon)
         assert 1 < self.min_horizon <= self.horizon, [self.min_horizon, self.horizon]
-        self.plan_size = get_with_default(params, "plan_size", default=64)
+
         self._optimize_prior = get_with_default(params, "optimize_prior", default=False)
         self._optimize_policy = get_with_default(params, "optimize_policy", default=True)
 
@@ -89,11 +94,13 @@ class LMPGroupedModel(GroupedModel):
         self.plan_name = get_with_default(params, "plan_name", default="plan")
         self.action_names = get_with_default(params, "action_names", default=["action"])
 
+        # posterior inputs (B x H x ...) or (B x ...) broadcasted to H
+        self.posterior_input_names = params["posterior_input_names"]
 
-        # self.all_input_names = get_with_default(params, "all_inputs", default=self._env_spec.all_names)
-        # self.include_goal_proprio = get_with_default(params, "include_goal_proprio", default=False)
+        # prior inputs (B x H x ...) or (B x ...), will be sub-sampled along horizon
+        self.prior_input_names = get_with_default(params, "prior_input_names", self.posterior_input_names)
 
-        # all state encoders, run first, default is all the non-required models
+        # all encoders that map to a state vector, run first, default is all the non-required models
         self.state_encoder_names = list(get_with_default(params, "state_encoder_names",
                                                          set(self._sorted_model_order).difference(
                                                              self.required_models)))
@@ -110,11 +117,8 @@ class LMPGroupedModel(GroupedModel):
         self.set_fn("action_loss_fn", params["action_loss_fn"],
                     Callable[[__class__, d, d, d], torch.Tensor])
 
-        if params.has_leaf_key("batch_mask_fn"):
-            # takes inputs, outputs (B,) tensor mask
-            self.batch_mask_fn = params["batch_mask_fn"]
-        else:
-            self.batch_mask_fn = None
+        # takes inputs, outputs (B,) tensor mask
+        self.batch_mask_fn = params << "batch_mask_fn"
 
         self._block_model_training_steps = get_with_default(params, "block_model_training_steps", 0)
         self._block_kl_training_steps = get_with_default(params, "block_kl_training_steps", 0)
@@ -135,10 +139,20 @@ class LMPGroupedModel(GroupedModel):
         pass
 
     def encoders_forward(self, inputs: d, encoder_names=None, **kwargs):
-        """
-        :param inputs: (d)  (B x H x ...)
-        :param encoder_names
-        :return model_outputs: (d)  (B x H x ...)
+        """ Runs inputs through the encoder.
+
+        Parameters
+        ----------
+        inputs: AttrDict
+            (B x H x ...) inputs to pass into encoder
+        encoder_names: List[str]
+            Names of the encoders to run (each will be a key in self._models)
+        kwargs
+
+        Returns
+        -------
+        model_outputs: AttrDict
+            (B x H x ...) encoder outputs
         """
         results = d()
         if encoder_names is None:
@@ -170,7 +184,22 @@ class LMPGroupedModel(GroupedModel):
         return self._preproc_fn(inputs) if preproc else inputs
 
     def compute_plan_prior(self, pl_inputs, model_outs, sample=True, **kwargs):
-        # get the proposed plan (start and goal)
+        """ Get the proposed plan (start and goal)
+
+        Parameters
+        ----------
+        pl_inputs:
+            (B x H x ...) inputs to the plan models
+        model_outs:
+            outputs so far
+        sample:
+            whether or not to sample from plan distribution
+        kwargs
+
+        Returns
+        -------
+        plan_propose_outs: outputs of proposal
+        """
         plan_propose_ins = self.prior_input_selector(pl_inputs)
         plan_propose_outs = self.prior(plan_propose_ins)
         model_outs.plan_prior = plan_propose_outs
@@ -183,20 +212,55 @@ class LMPGroupedModel(GroupedModel):
         return plan_propose_outs
 
     def compute_plan_posterior(self, pl_inputs, model_outs, sample=True, **kwargs):
-        # get the recognized plan
-        plan_recog_ins = self.posterior_input_selector(pl_inputs)
-        plan_recog_outs = self.posterior(plan_recog_ins)
-        model_outs.plan_posterior = plan_recog_outs
+        """ Get the posterior plan (full temporal sequence)
+
+        Parameters
+        ----------
+        pl_inputs: AttrDict
+            (B x H x ...) inputs to the plan models
+        model_outs:
+            outputs so far
+        sample:
+            whether or not to sample from the plan distribution
+        kwargs
+
+        Returns
+        -------
+        plan_posterior_outs: outputs of posterior
+        """
+        # get the posterior inputs
+        plan_recog_ins = pl_inputs > self.posterior_input_names
+
+        # run the posterior
+        plan_posterior_outs = self.posterior(plan_recog_ins)
+        model_outs.plan_posterior = plan_posterior_outs
 
         if sample:
             # sample from recognition for training, for example
-            sampled_plan = self.plan_sample_fn(plan_recog_outs)
+            sampled_plan = self.plan_sample_fn(plan_posterior_outs)
             model_outs.plan_posterior_sample = sampled_plan
 
-        return plan_recog_outs
+        return plan_posterior_outs
 
     def compute_policy_outs(self, pl_inputs, model_outs, plan_sample_name, sample=False, **kwargs):
-        # add the sampled plan + inputs + encodings, optional sampling the output
+        """ Add the sampled plan + inputs + encodings, optional sampling the output
+
+        Parameters
+        ----------
+        pl_inputs: AttrDict
+            (B x H x ...) inputs to the plan models (overlapping with policy inputs)
+        model_outs: AttrDict
+            outputs so far
+        plan_sample_name: str TODO change name
+            plan name, also the prefix name of the policy outputs in model_outs, suffixed with "_policy"
+        sample:
+            Whether or not to sample from the policy output
+        kwargs
+
+        Returns
+        -------
+
+        """
         policy_ins = self.policy_input_selector(pl_inputs)
         policy_outs = self.policy(policy_ins, **kwargs)
         model_outs[plan_sample_name + "_policy"].combine(policy_outs)
@@ -209,7 +273,20 @@ class LMPGroupedModel(GroupedModel):
         return model_outs[plan_sample_name + "_policy"]
 
     def compute_goals(self, pl_inputs, model_outs, **kwargs):
-        # AttrDict (B x H ...)
+        """ Computes the goals to be used in goal conditioning, adds them to "goal_states" in model_outs
+
+        Parameters
+        ----------
+        pl_inputs: AttrDict
+            inputs to the policy and the plan network
+        model_outs: AttrDict
+            outputs so far
+        kwargs
+
+        Returns
+        -------
+
+        """
         goal_states = self.goal_selector(pl_inputs)
         # default mask is to include all states as attributed to this goal
         model_outs.goal_states = goal_states.leaf_copy()
@@ -224,11 +301,12 @@ class LMPGroupedModel(GroupedModel):
         return broadcast_dims(plan, dims=[-2], new_shape=[current_horizon])
 
     # run on a plan and goal
-    def forward(self, inputs, preproc=True, postproc=True, run_prepare=True, plan_posterior=False, sample=False, current_horizon=None,
+    def forward(self, inputs, preproc=True, postproc=True, run_prepare=True, plan_posterior=False, sample=False,
+                current_horizon=None,
                 run_enc=True, run_goal_select=True, run_plan=True, run_random_plan_policy=False, run_policy=True,
-                run_all=False, batch_element_mask=None, plan_posterior_policy=None, model_outs=d(), **kwargs):
-        """
-        LMP forward:
+                run_all=False, plan_posterior_policy=None, batch_element_mask=None, model_outs=d(), **kwargs):
+        """ Forward call for LMP
+
         0. inputs are (B x H x ...)
         1. run all state encoders on inputs, resulting in (B x H x ...)
         2. Run goal selector to get the goals for the sequence, along with the temporal mask (B x H)
@@ -239,29 +317,66 @@ class LMPGroupedModel(GroupedModel):
             a. inputs from prior_input_selector(inputs, goals) -> (B x ...), run prior:  (B x PD)
         5. combine all inps, etc
 
-        :param inputs: (d)  (B x H x ...), H >= 2
-        :param preproc:
-        :param postproc:
-        :param sample: for the OUTPUT action, plan is always sampled for forward
-        :param current_horizon: The "window" size to use when running the model forward. 2 <= current_horizon <= H
+        Parameters
+        ----------
+        inputs: AttrDict
+            inputs consisting of (B x H x ...) tensors
+        preproc: bool
+            whether to run self._preproc_fn before
+        postproc: bool
+            whether to run self._postproc_fn after
+        run_prepare: bool
+            whether to run preparation actions (input normalization, parsing tuple inputs potentially)
+        plan_posterior: bool
+            whether to run the posterior network at all
+        sample: bool
+            whether to sample from the policy action distribution
+            This is only for the OUTPUT action, plan is always sampled for forward
+        current_horizon: int
+            the horizon to use in place of H (e.g. if using variable length batches) 2 <= current_horizon <= H
+        run_enc: bool
+            Run the encoder networks before computing the plan
+        run_goal_select: bool
+            Select goals from window, otherwise assume they are already there.
+        run_plan: bool
+            if True, will run the plan networks (either prior, posterior, or both)
+        run_random_plan_policy: bool
+            use a random plan as input to the policy, sampled from mean / std across the batch of plans
+        run_policy: bool
+            run the policy using whichever plans were generated (depending on run_all and plan_posterior_policy)
+        run_all: bool
+            run the policy on *both* prior and posterior plans
+            requires that plan_posterior = True
+        plan_posterior_policy: bool
+            run the policy with the posterior plan. If run_all=True, will also run prior plan.
+            If plan_posterior_policy=False and run_all=False, will only run the prior
+        batch_element_mask: 1D tensor
+            sample only some indices in the batch.
+        model_outs: AttrDict
+        kwargs:
+            extra arguments for each inner model.
 
-        :return model_outputs: (d)  (B x ...)
-        - embeddings/...
-        - plan_posterior(_sample)
-        - plan_prior(_sample)
-        - action_names
-
+        Returns
+        -------
+        model_outputs: AttrDict
+            (B x ...) including:
+            - embeddings/...
+            - plan_posterior(_sample)
+            - plan_prior(_sample)
+            - <action_names>
         """
         assert plan_posterior or not run_all, "Cannot run all without running plan_recognition forward"
 
         if plan_posterior_policy is None:
             plan_posterior_policy = plan_posterior
 
+        # normalization, for example
         if run_prepare:
             inputs = self._prepare_inputs(inputs, preproc=preproc, current_horizon=current_horizon)
 
         # if plan was not passed in, we need to compute the plan first.
-        if not model_outs.has_node_leaf_key('plan_posterior_sample') and not model_outs.has_node_leaf_key('plan_prior_sample'):
+        if not model_outs.has_node_leaf_key('plan_posterior_sample') and not model_outs.has_node_leaf_key(
+                'plan_prior_sample'):
             # .leaf_apply(lambda arr: arr.shape).pprint()
             assert run_plan or not run_all, "Cannot run all without running some plan forward"
 
@@ -270,15 +385,13 @@ class LMPGroupedModel(GroupedModel):
 
         # for example, computing goals
         pl_inputs = inputs.leaf_copy()
-        # pl_inputs.leaf_apply(lambda arr: arr.shape).pprint()
 
         with timeit("lmp_forward"):
-
+            # sample a subset of the batch elements
             if batch_element_mask is not None:
                 pl_inputs.leaf_modify(lambda arr: arr[batch_element_mask])
 
             # also accepts a tuple with a specific order
-
             if run_enc:
                 with timeit("lmp_forward/encoders"):
                     # encode states
@@ -294,8 +407,10 @@ class LMPGroupedModel(GroupedModel):
                     goal_kwargs = self.parse_kwargs_for_method("goal", kwargs)
                     pl_inputs.goal_states = self.compute_goals(pl_inputs, model_outs, **goal_kwargs)
             else:
-                assert pl_inputs.has_node_leaf_key("goal_states"), "Goals required but run_goal_select = False and none present"
+                assert pl_inputs.has_node_leaf_key("goal_states"), \
+                    "Goals required but run_goal_select = False and none present"
 
+            # generate plans
             if run_plan:
                 with timeit("lmp_forward/prior"):
                     plan_prior_kwargs = self.parse_kwargs_for_method("plan_prior", kwargs)
@@ -306,6 +421,7 @@ class LMPGroupedModel(GroupedModel):
                         plan_post_kwargs = self.parse_kwargs_for_method("plan_posterior", kwargs)
                         self.compute_plan_posterior(pl_inputs, model_outs, **plan_post_kwargs)
 
+            # determine which plan will be used as input to the policy, of the ones that are present
             if run_all:
                 samples = ("plan_posterior", "plan_prior")
             elif plan_posterior_policy:
@@ -313,6 +429,7 @@ class LMPGroupedModel(GroupedModel):
             else:
                 samples = ("plan_prior",)
 
+            # actually run the policy
             if run_policy:
                 # per plan sample, generate the policy output.
                 for plan_sample_name in samples:
@@ -323,6 +440,7 @@ class LMPGroupedModel(GroupedModel):
                         # add the sampled plan + inputs + encodings, optional sampling the output
                         self.compute_policy_outs(pl_inputs, model_outs, plan_sample_name, sample=False, **kwargs)
 
+                # generate a random plan using batch statistics (mean / std)
                 if run_random_plan_policy:
                     old_plans = model_outs[f"{samples[0]}_sample"]
                     rand_plans = d()
@@ -334,21 +452,23 @@ class LMPGroupedModel(GroupedModel):
                         rand_plans[k] = torch.randn_like(plan) * rand_plan_std + rand_plan_mean
 
                     pl_inputs.combine(rand_plans.leaf_apply(
-                            lambda arr: self.check_broadcast_plan(arr, current_horizon)))
+                        lambda arr: self.check_broadcast_plan(arr, current_horizon)))
                     with timeit("lmp_forward/random_plan_policy"):
                         self.compute_policy_outs(pl_inputs, model_outs, "plan_random", sample=False, **kwargs)
 
-                # move this to "top level" to sample appropriate action
+                # move the generated action to "top level" to sample appropriate action
                 if plan_posterior_policy:
                     model_outs.combine(model_outs.plan_posterior_policy)
                 else:
                     model_outs.combine(model_outs.plan_prior_policy)
 
+                # sample from the top level action (either from prior plan or posterior plan)
                 if sample:
                     policy_sample = self.action_sample_fn(model_outs)
                     assert policy_sample.has_leaf_keys(self.action_names)
                     model_outs.combine(policy_sample)  # sampled action will be at the root level
 
+            # for subclasses to define more forward actions
             self.compute_additional_forward(pl_inputs, model_outs)
 
             return self._postproc_fn(pl_inputs, model_outs) if postproc else model_outs
@@ -362,13 +482,18 @@ class LMPGroupedModel(GroupedModel):
 
     def _get_policy_outputs(self, inputs, outputs, model_outputs, current_horizon=None):
         """
-        returns the policy outputs (current_horizon - 1)
+        Computes the true (current_horizon - 1) actions for each action name from inputs, and adds them to outputs
 
-        :param inputs:
-        :param outputs:
-        :param model_outputs:
-        :param current_horizon:
-        :return:
+        Parameters
+        ----------
+        inputs:
+        outputs:
+        model_outputs: outputs so far
+        current_horizon: The horizon of the sequence
+
+        Returns
+        -------
+        outs: the outputs including the (current_horizon - 1) ground truth actions
         """
         outs = outputs.leaf_copy()
         # semantically, an action is an input, even though it is an output in our case
@@ -382,23 +507,39 @@ class LMPGroupedModel(GroupedModel):
     def loss(self, inputs, outputs, i=0, writer=None, writer_prefix="", training=True, ret_dict=False,
              randomize_horizon=True, do_prior_policy=False, do_posterior_policy=False, meta=d(), **kwargs):
         """
-        :param inputs: (d)  (B x H x ...)
-        :param outputs: (d)  (B x H x ...)
-        :param i: (int) current step, used to scale beta
-        :param writer: (SummaryWriter)
-        :param writer_prefix: (str)
-        :param training: (bool)
-        :param ret_dict: (bool)
-        :param randomize_horizon: (bool) choose between min_horizon and horizon for this batch
 
-        :return loss: (torch.Tensor)  (1,)
+        Parameters
+        ----------
+        inputs: AttrDict
+            (B x H x ...)
+        outputs: AttrDict
+            (B x H x ...)
+        i: int
+            current step, used to scale beta when using LR schedule
+        writer
+        writer_prefix: str
+        training: bool
+        ret_dict: bool
+        randomize_horizon: bool
+            choose between min_horizon and horizon for this batch
+        do_prior_policy:
+
+        do_posterior_policy
+        meta
+        kwargs
+
+        Returns
+        -------
+
         """
 
+        # choose a horizon
         if randomize_horizon:
             current_horizon = random.randint(self.min_horizon, self.horizon)
         else:
             current_horizon = self.horizon
 
+        # get the batch mask (if any)
         if self.batch_mask_fn is not None:
             with timeit("loss/batch_mask"):
                 batch_mask = self.batch_mask_fn(inputs)
@@ -407,43 +548,50 @@ class LMPGroupedModel(GroupedModel):
         else:
             batch_mask = None
 
+        # if optimizing prior & posterior, set run_all=True
         run_all = (do_posterior_policy if self._optimize_prior else do_prior_policy) or writer is not None
-        plan_post_policy = not self._optimize_prior or run_all  # run policy for posterior plan
+        # run policy if we are computing posterior plan
+        plan_post_policy = not self._optimize_prior or run_all
 
         if i >= self._block_model_training_steps:
-
+            # model forward
             with timeit("loss/forward"):
-                # inputs.leaf_apply(lambda arr: arr.shape).pprint()
                 model_outs = self.forward(inputs, preproc=True, postproc=True, plan_posterior=True,
                                           plan_posterior_policy=plan_post_policy,
-                                          current_horizon=current_horizon, run_all=run_all, run_random_plan_policy=run_all or self.beta_info > 0, sample=False, meta=meta)
+                                          current_horizon=current_horizon, run_all=run_all,
+                                          run_random_plan_policy=run_all or self.beta_info > 0, sample=False, meta=meta)
 
             with timeit("loss/action_and_plan_loss"):
-
+                # compute plan and action losses
                 if self._optimize_policy or run_all:
+                    # get the output action targets
                     outs = self._get_policy_outputs(inputs, outputs, model_outs, current_horizon=current_horizon)
 
                     if self._optimize_prior:
+                        # compute action loss using prior plan
                         model_outs.combine(model_outs["plan_prior_policy"])
                         policy_loss = self.action_loss_fn(self, model_outs, inputs, outs, i=i, writer=writer,
-                                                                    writer_prefix=writer_prefix + "prior/")
+                                                          writer_prefix=writer_prefix + "prior/")
                     else:
+                        # compute action loss using posterior plan
                         model_outs.combine(model_outs["plan_posterior_policy"])
                         policy_loss = self.action_loss_fn(self, model_outs, inputs, outs, i=i, writer=writer,
-                                                                    writer_prefix=writer_prefix + "posterior/")
+                                                          writer_prefix=writer_prefix + "posterior/")
 
                     if run_all or self.beta_info > 0:
+                        # compute the loss of a random plan (if run_all)
                         model_outs.combine(model_outs["plan_random_policy"])
                         random_policy_loss = self.action_loss_fn(self, model_outs, inputs, outs, i=i, writer=writer,
-                                                                    writer_prefix=writer_prefix + "random/")
+                                                                 writer_prefix=writer_prefix + "random/")
                     else:
                         random_policy_loss = 0
                 else:
                     policy_loss = torch.zeros(1, device=self.device)
                     random_policy_loss = 0
 
+                # plan divergence loss, e.g. KL divergence
                 plan_dist_loss = self.plan_dist_fn(model_outs["plan_prior"], model_outs["plan_posterior"],
-                                              inputs, outputs, i=i, writer=writer, writer_prefix=writer_prefix)
+                                                   inputs, outputs, i=i, writer=writer, writer_prefix=writer_prefix)
         else:
             model_outs = d()
             # blocks training, effectively.
@@ -461,12 +609,10 @@ class LMPGroupedModel(GroupedModel):
         elif run_all:
             extra_scalars['random/policy_loss'] = random_policy_loss.mean().item()
 
-        # print(policy_loss, proposed_plan_and_encoded_start_goal.plan_dist.mean,
-        #       recognized_plan_and_encoded_horizon.plan_dist.mean)
-
         policy_loss = policy_loss.mean()
         plan_dist_loss = plan_dist_loss.mean()
 
+        # combine the losses
         loss = policy_loss if self._optimize_policy else torch.zeros_like(policy_loss)
         if i >= self._block_kl_training_steps:
             loss = loss + self.lmp_beta * plan_dist_loss
@@ -476,19 +622,21 @@ class LMPGroupedModel(GroupedModel):
                 additional_losses[key] = (weight, avg)
                 loss += weight * avg
 
+        # if run all, we compute the other plan's action too, and compute action losses over the other plan.
         if run_all and i >= self._block_model_training_steps:
             if self._optimize_prior:
                 model_outs.combine(model_outs["plan_posterior_policy"])
                 policy_prior_loss = policy_loss
                 policy_posterior_loss = self.action_loss_fn(self, model_outs, inputs, outs, i=i, writer=writer,
-                                                       writer_prefix=writer_prefix + "posterior/")
+                                                            writer_prefix=writer_prefix + "posterior/")
 
             else:
                 policy_posterior_loss = policy_loss
                 model_outs.combine(model_outs["plan_prior_policy"])
                 policy_prior_loss = self.action_loss_fn(self, model_outs, inputs, outs, i=i, writer=writer,
-                                                       writer_prefix=writer_prefix + "prior/")
+                                                        writer_prefix=writer_prefix + "prior/")
 
+        # writing scalars
         if writer is not None:
             with timeit("writer"):
                 writer.add_scalar(writer_prefix + "loss", loss.item(), i)
@@ -500,13 +648,15 @@ class LMPGroupedModel(GroupedModel):
                     writer.add_scalar(writer_prefix + "posterior/policy_loss", policy_posterior_loss.mean().item(),
                                       i)  # extra but good for consistency
                 if batch_mask is not None:
-                    writer.add_scalar(writer_prefix + "batch_utilization", torch.count_nonzero(batch_mask) / len(batch_mask), i)
+                    writer.add_scalar(writer_prefix + "batch_utilization",
+                                      torch.count_nonzero(batch_mask) / len(batch_mask), i)
                 for key, (weight, add_loss) in additional_losses.leaf_items():
                     writer.add_scalar(writer_prefix + key, add_loss.item(), i)
                 for key, scalar in extra_scalars.leaf_items():
                     writer.add_scalar(writer_prefix + key, scalar, i)
 
         if ret_dict:
+            # return everything as a dictionary
             dc = d(
                 loss=loss[None],
                 plan_dist_loss=plan_dist_loss[None],
@@ -557,10 +707,12 @@ class LMPGroupedModel(GroupedModel):
         return self._policy
 
     @staticmethod
-    def get_default_mem_policy_forward_fn(replan_horizon, action_names, policy_rnn_hidden_name='hidden_policy', recurrent=False, sample_plan=False, flush_horizon=None, **kwargs):
+    def get_default_mem_policy_forward_fn(replan_horizon, action_names, policy_rnn_hidden_name='hidden_policy',
+                                          recurrent=False, sample_plan=False, flush_horizon=None, **kwargs):
         # online execution using MemoryPolicy or subclass
         if flush_horizon is None:
             flush_horizon = replan_horizon
+
         def mem_policy_model_forward_fn(model: LMPGroupedModel, obs: d, goal: d, memory: d,
                                         known_sequence=None, **kwargs):
             obs = obs.leaf_copy()
@@ -594,12 +746,14 @@ class LMPGroupedModel(GroupedModel):
                 # memory.policy_rnn_h0 = None
                 if known_sequence is not None:
                     # get z from plan recog, then run policy on current obs
-                    out = model.forward(known_sequence, sample=False, rnn_hidden_init=None, plan_posterior=True, run_policy=False,
+                    out = model.forward(known_sequence, sample=False, rnn_hidden_init=None, plan_posterior=True,
+                                        run_policy=False,
                                         current_horizon=known_sequence.get_one().shape[1], **kwargs)
                     dist = out["plan_posterior/plan_dist"]
                 else:
                     # plan proposal, filler actions for forward call
-                    out = model.forward(obs & action_filler, sample=False, rnn_hidden_init=None, current_horizon=H, run_policy=False, **kwargs)
+                    out = model.forward(obs & action_filler, sample=False, rnn_hidden_init=None, current_horizon=H,
+                                        run_policy=False, **kwargs)
                     dist = out["plan_prior/plan_dist"]
 
                 if sample_plan:
@@ -611,7 +765,8 @@ class LMPGroupedModel(GroupedModel):
 
             # normal policy w/ fixed plan, we use prior, doesn't really matter here tho since run_plan=False
             model_outs = d(plan_prior_sample=d(plan=memory["plan"]))
-            out = model.forward(obs & action_filler, rnn_hidden_init=memory["policy_rnn_h0"], run_enc=True, run_plan=False, run_policy=True,
+            out = model.forward(obs & action_filler, rnn_hidden_init=memory["policy_rnn_h0"], run_enc=True,
+                                run_plan=False, run_policy=True,
                                 plan_posterior=False,  # use the prior plan
                                 model_outs=model_outs,
                                 sample=False, current_horizon=H, **kwargs)

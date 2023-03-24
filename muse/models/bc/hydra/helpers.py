@@ -1,10 +1,15 @@
 import numpy as np
 import torch
+from attrdict import AttrDict as d
+from torch.nn import CrossEntropyLoss
 
 from muse.experiments import logger
+from muse.models.bc.gcbc import BaseGCBC
+from muse.utils.general_utils import timeit
 
 
-def get_mode_smooth_preproc_fn(mode_key, smooth_mode_key, smooth_n=2, use_gaussian=False, gaussian_width=3, debug=False):
+def get_mode_smooth_preproc_fn(mode_key, smooth_mode_key, smooth_n=2, use_gaussian=False, gaussian_width=3,
+                               debug=False):
     # n on either side of mode=1 segment.
     if use_gaussian:
         from scipy import signal
@@ -33,7 +38,7 @@ def get_mode_smooth_preproc_fn(mode_key, smooth_mode_key, smooth_n=2, use_gaussi
             pad_mode = np.concatenate([mode[..., :1]] * smooth_n + [mode] + [mode[..., -1:]] * smooth_n, axis=-1)
 
             # [H,], [4*sn+1,] -> out shape: [H+4*sn,] -> [H,], float
-            new_mode = np.convolve(pad_mode, kernel)[2*smooth_n:-2*smooth_n, None]
+            new_mode = np.convolve(pad_mode, kernel)[2 * smooth_n:-2 * smooth_n, None]
 
             # saturate at 1.
             mode = np.minimum(new_mode, 1)

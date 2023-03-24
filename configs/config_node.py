@@ -79,7 +79,7 @@ class ConfigNode:
         """
         defaults = defaults.as_dict()
 
-        if self.cls is not None and hasattr(self.cls, 'predefined_args'):
+        if self.cls is not None and hasattr(self.cls, 'predefined_arguments'):
             # class defines some arguments
             logger.debug(f'[{self.name}] Loading predefined args for {self.cls}...')
 
@@ -94,7 +94,7 @@ class ConfigNode:
 
         if len(defaults_to_add) > 0:
             # use default loading for extra params in the defaults.
-            cu.parser_from_params(parser, defaults)
+            cu.parser_from_params(parser, defaults_to_add)
 
         return parser
 
@@ -127,7 +127,7 @@ class ConfigNode:
         local_params, _ = cu.filter_local_and_group_params(node_params)
         for key, item in local_params.leaf_items():
             if isinstance(item, Field):
-                out_d[key] = item.process(key, local_params, global_params)
+                out_d[key] = item.process(key, local_params, global_params, path=self.full_name)
 
         return out_d
 

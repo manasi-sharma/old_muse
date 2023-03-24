@@ -3,7 +3,9 @@ Evaluate a policy and model in an environment. No saving of data (see scripts/co
 """
 
 import os
+import sys
 
+import numpy as np
 import torch
 
 from configs.helpers import get_script_parser, load_base_config
@@ -19,6 +21,7 @@ exit_on_ctrl_c()
 parser = get_script_parser()
 parser.add_argument('config', type=str)
 parser.add_argument('--model_file', type=str)
+parser.add_argument('--max_eps', type=int, default=0)
 parser.add_argument('--no_model_file', action="store_true")
 parser.add_argument('--random_policy', action="store_true")
 parser.add_argument('--print_last_obs', action="store_true")
@@ -66,17 +69,27 @@ model.eval()
 
 # actual eval loop
 done = [False]
-returns = 0.
+all_returns = []
+rew_list = []
 i = 0
+ep = 0
+steps = 0
 reward_reduce = reduce_map_fn[args.reduce_returns]
 
 while True:
     if done[0] or policy.is_terminated(model, obs, goal):
-        logger.info(f"Resetting env after {i} steps")
+        logger.info(f"[{ep}] Resetting env after {i} steps")
         if args.track_returns:
+            returns = reward_reduce(torch.tensor(rew_list)).item()
             logger.info(f'Returns: {returns}')
-        returns = 0
+            all_returns.append(returns)
+        rew_list = []
+        steps += i
         i = 0
+        ep += 1
+        # terminate condition
+        if ep >= args.max_eps > 0:
+            break
         obs, goal = env.reset()
         policy.reset_policy(next_obs=obs, next_goal=goal)
 
@@ -98,9 +111,18 @@ while True:
     i += 1
 
     if args.track_returns:
-        rew = reward_reduce(obs.reward).item()
-        returns += rew
+        rew_list.append(obs.reward.item())
 
     if done and args.print_last_obs:
         logger.debug("Last obs:")
         obs.pprint()
+
+if args.track_returns:
+    logger.info(f"----------- Done w/ {ep} episode(s), {steps} steps  -----------")
+    logger.info(f"exp_name = {exp_name}\n")
+    logger.debug(f"Raw command: \n{' '.join(sys.argv)} \n")
+
+    all_returns = np.asarray(all_returns)
+    logger.info(f"Returns: mean={np.mean(all_returns)}, std={np.std(all_returns)}, "
+                f"%>0={np.mean(all_returns > 0) * 100}")
+    logger.info(f"---------------------------------------------------------------")

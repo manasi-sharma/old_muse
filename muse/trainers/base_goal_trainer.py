@@ -652,11 +652,7 @@ class BaseGoalTrainer:
 
         # log the model parameters
         logger.debug("Model parameters:")
-        if hasattr(self._model, "print_parameters"):
-            self._model.print_parameters()
-        else:
-            for p in self._model.parameters():
-                logger.debug("PARAMETER: shape = %s, requires_grad = %s" % (p.shape, p.requires_grad))
+        logger.debug(self._model)
 
     def run(self):
         raise NotImplementedError

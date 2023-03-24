@@ -41,6 +41,32 @@ We use the `attr-dicts` package, which implements nested dictionaries that are e
 Most classes accept AttrDict's rather than individual parameters for initialization, and often for methods as well.
 See here for greater detail about working with AttrDicts: https://github.com/Stanford-ILIAD/attrdict
 
+### muse.utils.abstract
+Here we define an `Argument`, which classes that derive from `BaseClass` can use to declare arguments that will automatically be parsed to command line by the `configs` module, even if the argument is not present in the config.
+This `Argument` class resembles `argparse` arguments in syntax / instantiation. 
+For a class `ExampleClass` that derives from `BaseClass`, we can set arguments in the class definition as follows:
+```python
+from muse.utils.abstract import BaseClass, Argument
+class ExampleClass(BaseClass):
+    # declare the parameters
+    predefined_arguments = [
+       Argument('batch_size', type=int, default=100),
+       Argument('horizon', type=int, default=10),
+    ]
+    
+    def __init(self, params):
+        # read the parameters into self, allowing access from self.<param_name>
+        self.read_predefined_params(params)
+```
+
+Now, any `config` params (i.e., `configs.config_node.ConfigNode`) where `cls=ExampleClass` will automatically add the arguments `batch_size` and `horizon` to the command line parser.
+By calling `read_predefined_params` with `AttrDict` params, we can automatically parse the given arguments with their defaults into class fields.
+For example, above, we can refer to `self.batch_size` and `self.horizon` for the rest of the code.
+
+More details about overriding argument defaults and specifying values through the config can be found in `configs/README.md`.
+Note that not all classes support or use this style of argument specification, and it is completely optional.
+A good example of using these arguments can be found in the `muse.models.bc` module (e.g. `gcbc.py`).
+
 ### muse.datasets
 Datasets implement various storage and reading mechanisms. 
 `muse.datasets.NpDataset` is the one used for most things. `muse.datasets.Hdf5Dataset` is implemented and tested but should rarely be used, since it is often slower (without in-memory caching).
@@ -110,6 +136,7 @@ Scripts in `muse` follow a similar format, here are the basic ones that one migh
 - `scripts/resolve.py`: Resolve the configuration module, and print out the resulting parameters
 - `scripts/tests/load_batches.py`: Load a dataset module and load batches while timing things, as a way to debug dataset loading.
 - `scripts/eval.py`: Evaluate a model and policy in an environment.
+- `scripts/eval_video.py`: Evaluate a model and policy in an environment, and save only images to a dataset.
 - `scripts/collect.py`: Evaluate a model and policy in an environment, and also save it to dataset.
 - `scripts/interactive_collect.py`: Evaluate a model and policy in an environment, with a pygame window that lets you control which episode to keep, when to reset, etc
 
@@ -132,7 +159,11 @@ exp_name = root.get_exp_name()
 ```
 
 First we load local arguments for the script, then we load the config tree (see `configs/README.md`), and then we get an experiment name from the root config node.
-Usually following this you can use the `params` AttrDict to instantiate any groups that are needed for the script. `params` will take the form of:
+Note that the `load_base_config` function accepts local_args.config to be either a string specifying the path to a config, e.g. `cfgs/exp_hvs/square/bc_rnn.py`, 
+or an experiment folder prefixed by `exp=`, for example `exp=experiments/hvsBlock3D/velact_b256_h10_human_square_30k_bc-l2_lstm-hs400-ps0`. 
+In the latter case, additional command line args will be prepended from `<exp_folder/config_args.txt`, which the ExperimentFileManager auto generates with the command line args that come after the config file.
+
+Usually following header this you can use the `params` AttrDict to instantiate any groups that are needed for the script. `params` will take the form of:
 ```python
 from attrdict import AttrDict as d
 export = d(
@@ -151,3 +182,37 @@ export = d(
    ...,
 )
 ```
+
+### Example: Training NutAssemblySquare with BC-RNN (state only)
+
+Assume we have a dataset `data/hvsBlock3D/human_square_30k.npz` for the robosuite `NutAssemblySquare` environment.
+
+
+#### Training
+
+To train BC-RNN with intermittent evaluation (every 20k steps by default), we can run:
+
+`python scripts/goal_train.py --wandb_tags square:bc cfgs/exp_hvs/square/bc_rnn.py`
+
+This command will create the following experiment folder: `experiments/hvsBlock3D/velact_b256_h10_human_square_30k_bc-l2_lstm-hs400-ps0`, populated with the following:
+- `models/`: This is where the models will be saved as `chkpt_<>.pt`, the latest one as `model.pt`, and the best performing one as `best_model.pt`
+- `config.py`: A copy of the input config, in this case `cfgs/exp_hvs/square/bc_rnn.py`
+- `config_args.txt`: If you added any arguments after the config, this file will be created.
+- `log_train.txt`: A log of the command line outputs that used `muse.experiments.logger`
+- `git/`: A folder with git checkpoint and diff
+- `loss.csv`: Not currently implemented.
+
+To disable wandb integration, remove the `--wandb_tags` command and add before the config `--no_wandb`, which switches the logging to tensorboard, with the events file located in the experiments folder.
+In either logging tool, for this config the `env_train/returns` will plot the average returns across 50 rollouts (see `cfgs/trainer/rm_goal_trainer.py`) using the latest model, by default every 20k steps.
+
+All arguments that are provided in the config that are float, bool, or int types can be edited via command line (see `configs/README.md`)
+for example if we want a larger hidden size for the RNN we can provide:
+
+`python scripts/goal_train.py --wandb_tags square:bc cfgs/exp_hvs/square/bc_rnn.py %model %%action_decoder --hidden_size 1000`
+
+#### Evaluation
+
+To evaluate 100 episodes while tracking returns on the above experiment, run the following
+`python scripts/eval.py --max_eps 100 --track_returns --exp=experiments/hvsBlock3D/velact_b256_h10_human_square_30k_bc-l2_lstm-hs400-ps0`
+
+To evaluate 100 episodes...

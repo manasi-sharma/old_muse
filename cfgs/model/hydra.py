@@ -1,73 +1,78 @@
 from configs.fields import Field as F
-from muse.models.bc.hydra.dynas_gcbc_model import RNN_DAS_GCBC
-from muse.utils.loss_utils import get_default_mae_action_loss_fn
+from muse.models.bc.hydra.hydra_decoder import HydraRNNActionDecoder
+from muse.models.bc.hydra.hydra_gcbc import HydraGCBC
+from muse.models.model import Model
+from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
 from attrdict import AttrDict as d
 
 export = d(
-    exp_name='_hydra{?use_smooth_mode:_sm}_gma{gamma}_mb{mode_beta}_'
-             '{rnn_type}-hs{hidden_size}-sms{sparse_mlp_size}-ps{policy_size}',
-    cls=RNN_DAS_GCBC,
+    exp_name='_hydra{?use_mode_predictor:-mp}-l2_g{gamma}_mb{mode_beta}{?label_smoothing:_ls{label_smoothing}}',
+    cls=HydraGCBC,
     use_goal=False,
-    use_final_goal=False,
+    use_last_state_goal=False,
+
     normalize_states=False,
-    normalize_actions=False,
-    use_vision_encoder=False,
-    encoder_call_jointly=False,
-    default_img_embed_size=64,
-    default_use_spatial_softmax=False,
-    default_use_crop_randomizer=False,
-    default_use_color_randomizer=False,
-    default_use_erasing_randomizer=False,
-    default_downsample_frac=1.0,
-    crop_frac=0.9,
-    encoder_use_shared_params=False,
-    use_policy_dist=False,
-    policy_num_mix=1,
-    use_policy_dist_mean=False,
-    policy_sig_min=1e-05,
-    policy_sig_max=1000.0,
-    use_tanh_out=True,
-    dropout_p=0,
-    hidden_size=400,
-    policy_size=0,
-    rnn_depth=2,
-    rnn_type='lstm',
-    sparse_normalize_states=False,
-    sparse_normalize_actions=True,
+    save_action_normalization=True,
+    use_mode_predictor=False,
+
+    # hydra model/loss specific
     gamma=0.5,
     mode_beta=0.01,
-    balance_mode_loss=False,
-    balance_cross_entropy=False,
     label_smoothing=0.0,
     use_smooth_mode=False,
-    sparse_use_policy_dist=False,
-    sparse_policy_num_mix=1,
-    sparse_use_policy_dist_mean=False,
-    sparse_policy_sig_min=1e-05,
-    sparse_policy_sig_max=1000.0,
-    sparse_use_tanh_out=False,
-    sparse_dropout_p=0,
-    sparse_mlp_size=200,
-    sparse_mlp_depth=3,
-    device='cuda',
-    state_names=['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos', 'object'],
-    goal_names=['object'],
+    head_size=200,
+    # fill this in to override mode_head_size (which defaults to head_size)
+    mode_predictor_size=0,
+
     action_names=['action'],
     sparse_action_names=['target/position', 'target/orientation'],
-    raw_out_name='policy_raw',
-    inner_postproc_fn=None,
-    image_keys=[],
+
+    # mode loss functions (normalized sparse)
     mode0_loss_fn=F('sparse_action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x,
-                                                                                    vel_act=False,
+                                                                                    vel_act=False, err_fn=mse_err_fn,
                                                                                     policy_out_norm_names=x)),
     mode1_loss_fn=F('action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x, vel_act=True,
+                                                                             err_fn=mse_err_fn,
                                                                              policy_out_norm_names=[])),
-    default_normalize_sigma=1.0,
-    split_head_layers=2,
-    mode_head_size=200,
-    action_head_size=200,
-    inner_hidden_size=400,
-    use_mode_predictor=False,
-    sample_cat=False,
-    sparse_sample_cat=False,
+
+    # names
+    goal_names=['object'],
+    state_names=['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos', 'object'],
+
+    # encoders
+    state_encoder_order=['proprio_encoder'],
+    proprio_encoder=d(
+        # normalizes and replaces these keys
+        cls=Model,
+        normalize_inputs=F('../normalize_states'),
+        normalization_inputs=F('../state_names'),
+    ),
+
+    model_order=['proprio_encoder', 'action_decoder'],
+    action_decoder=d(
+        exp_name='_{rnn_type}-hs{hidden_size}-ps{action_head_size}-ms{mode_head_size}{?use_policy_dist:-pd}'
+                 '_sms{sparse_mlp_size}',
+        cls=HydraRNNActionDecoder,
+        use_mode_predictor=F('../use_mode_predictor'),
+        input_names=F('../state_names'),
+        action_names=F('../action_names'),
+        sparse_action_names=F('../sparse_action_names'),
+        mode_key='mode',
+        rnn_type='lstm',
+        mp_rnn_type='lstm',
+        use_policy_dist=False,
+        policy_num_mix=1,
+        use_policy_dist_mean=False,
+        policy_sig_min=1e-05,
+        policy_sig_max=1000.0,
+        use_tanh_out=True,
+        dropout_p=0,
+        hidden_size=400,
+        policy_size=0,
+        action_head_size=F('../head_size'),
+        mode_head_size=F(['../head_size', '../mode_predictor_size'], lambda x, m: x if m == 0 else m),
+        sparse_mlp_size=F('../head_size'),
+        decoder_inter_size=F('hidden_size'),
+        rnn_depth=2,
+    ),
 )

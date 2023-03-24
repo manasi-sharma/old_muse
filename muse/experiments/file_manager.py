@@ -46,7 +46,7 @@ class ExperimentFileManager(FileManager):
         if config_fname is not None:
             shutil.copy(config_fname, os.path.join(self._exp_dir, 'config.py'))
             # write all command line args (for config) as well, if they are provided
-            if extra_args is None or len(extra_args) == 0:
+            if extra_args is None:
                 c_args = sys.argv[1:]
             else:
                 c_args = list(extra_args)

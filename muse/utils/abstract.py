@@ -2,6 +2,7 @@ import abc as _abc
 import json
 from typing import List, Dict, Tuple
 
+from configs.fields import Field
 from muse.experiments import logger
 from attrdict.utils import get_with_default
 
@@ -17,10 +18,10 @@ class Argument:
     def __init__(self, name, *option_names, nargs=None, const=None, default=None, action=None,
                  type=None, choices=None, required=False, help=None, metavar=None):
         assert '-' not in name, f"{name} must not contain '-'"
-        # this is where
+        # this is where the value will be stored
         self.name = name
         # first option (will get '--{prefix}' before)
-        self.dest = name
+        self.cmd_name = name
         # other option names
         self.option_names = option_names
         self.nargs = nargs
@@ -60,13 +61,16 @@ class Argument:
                 self.default = value
                 # toggle the action
                 self.action = 'store_false' if self.action == 'store_true' else 'store_true'
-                # make sure the name reflects the new action
-                if self.dest.startswith('no-'):
-                    self.dest = self.dest[3:]
+                # make sure the cmd argument name reflects the new action
+                if self.cmd_name.startswith('no_'):
+                    self.cmd_name = self.cmd_name[3:]
                 else:
-                    self.dest = f'no-{self.name}'
+                    self.cmd_name = f'no_{self.cmd_name}'
         elif self.action is None:
-            assert isinstance(value, self.type), f"Arg={self.name}: value={value} not of type={self.type}"
+            try:
+                value = self.type(value)
+            except Exception as e:
+                assert isinstance(value, self.type), f"Arg={self.name}: value={value} not of type={self.type} ({e})"
         else:
             raise NotImplementedError(f'action default unimplemented: {self.action}')
 
@@ -88,13 +92,16 @@ class Argument:
         if self.metavar is not None:
             kwargs["metavar"] = self.metavar
 
+        if self.cmd_name != self.name:
+            kwargs['dest'] = self.name
+
         if isinstance(self.default, Argument):
             kwargs['default'] = None  # default will be filled in later
 
         if update_kwargs is not None:
             kwargs.update(update_kwargs)
 
-        parser.add_argument(f"--{prefix}{self.dest}", *self.option_names, *added_option_names, **kwargs)
+        parser.add_argument(f"--{prefix}{self.cmd_name}", *self.option_names, *added_option_names, **kwargs)
         return self.name
 
     def setattr_from_params(self, obj, params, values, prefix=""):
@@ -112,8 +119,8 @@ class Argument:
             if isinstance(self.default, Argument):
                 def_name = f"{prefix}{self.default.name}"
                 assert def_name in values.keys(), f"external value for {def_name} " \
-                                                           f"must be provided for {my_name} " \
-                                                           f"(make sure external argument is defined first so it is read first)"
+                                                  f"must be provided for {my_name} " \
+                                                  f"(make sure external argument is defined first so it is read first)"
                 default = values[def_name]
 
             val = get_with_default(params, my_name, default)
@@ -127,8 +134,19 @@ class Argument:
 
 
 def resolve_arguments(*classes):
-    # will remove duplicate arguments (by instance, not by name)
-    # will error if names conflict but instances aren't the same
+    """
+    Will remove duplicate arguments (by instance, not by name)
+    Will error if names conflict but instances aren't the same
+
+    Parameters
+    ----------
+    classes: List[type]
+        the classes to deduplicate, using the first argument of each duplicate (by order)
+
+    Returns
+    -------
+
+    """
     arguments = []
     corr_names = []
     corr_classes = []
@@ -235,9 +253,13 @@ class BaseClass(_abc.ABC):  # , _overrides.EnforceOverrides):
         skipped = []
         # local
         for arg in cls.predefined_arguments:
-            if arg.name not in skip_args:
+            # skip this argument if its a field or it is listed in skip_args.
+            default_is_field = arg.name in defaults.keys() and isinstance(defaults[arg.name], Field)
+            if arg.name not in skip_args and not default_is_field:
+                # get any option names for this argument.
                 extra_opnames = extra_option_names.get(arg.name, {})
                 kwargs = update_kwargs.get(arg.name, {})
+                # update the default
                 if defaults is not None and arg.name in defaults.keys():
                     arg.set_default(defaults[arg.name])
 
@@ -266,7 +288,7 @@ class BaseClass(_abc.ABC):  # , _overrides.EnforceOverrides):
             local_update_kwargs = {k[len(local_prefix):]: v for k, v in update_kwargs.items()
                                    if is_subclass_arg(k)}
             local_skip_args = [k[len(local_prefix):] for k in skip_args
-                         if is_subclass_arg(k)]
+                               if is_subclass_arg(k)]
 
             # we have to declare in the global prefix, not just local.
             added_local_names = sub_cls.declare_arguments(parser, extra_option_names=local_extra_opnames,
@@ -278,7 +300,7 @@ class BaseClass(_abc.ABC):  # , _overrides.EnforceOverrides):
             for n in local_skip_args:
                 node_skip_args.remove(n)
 
-        assert len(skipped) == len(node_skip_args), f"[{cls}] Node skip {node_skip_args}, but only could remove: {skipped}"
+        assert len(node_skip_args) == 0, f"[{cls}] Node skip could not remove {node_skip_args}"
 
         return names
 

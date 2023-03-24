@@ -29,7 +29,8 @@ class GoalTrainer(BaseGoalTrainer):
                  optimizer=None):
         """
         Trainer for a goal_policy, if you want online env steps during training.
-        NOTE: env will be reset when either env is terminated or goal_policy is terminated. TODO option for terminate when policy is done
+        NOTE: env will be reset when either env is terminated or goal_policy is terminated.
+        TODO option for terminate when policy is done
 
         Parameters
         ----------
@@ -391,6 +392,7 @@ class GoalTrainer(BaseGoalTrainer):
         while self._current_step < self._max_steps:
             # NOTE: always have some form of timing so that you can find bugs
             with timeit('total_loop'):
+                """ Model / Training actions """
                 # UPDATES
                 for i in range(len(self._datasets_train)):
                     if is_next_cycle(self._current_step, self._train_every_n_steps[i]) and len(
@@ -400,11 +402,6 @@ class GoalTrainer(BaseGoalTrainer):
                                 self._train_step(self._model, i)
                                 self._current_train_step[i] += 1
 
-                # environment rollouts
-                if not separate_eval and self._current_step >= self._block_env_on_first_n_steps:
-                    obs_train, goal_train, obs_holdout, goal_holdout = self.eval_step(obs_train, goal_train,
-                                                                                      obs_holdout, goal_holdout)
-
                 # holdout actions
                 for i in range(len(self._datasets_holdout)):
                     if is_next_cycle(self._current_step, self._holdout_every_n_steps[i]) and len(
@@ -413,48 +410,53 @@ class GoalTrainer(BaseGoalTrainer):
                             self._holdout_step(self._model, i)
                             self._current_holdout_step[i] += 1
 
-                # saving actions, skip the first cycle.
-                if self._current_step > 0:
-                    # SAVE MODEL
-                    if is_next_cycle(self._current_step, self._save_every_n_steps):
-                        with timeit('save'):
-                            do_best = False
-                            # compare if tracker name is valid and new episodes have been rolled out.
-                            if self._track_best_name in self._trackers.leaf_keys() and \
-                                    self._current_env_train_ep > self._last_best_env_train_ep:
-                                tracker = self._trackers[self._track_best_name]
-                                # if there's data, save if this is the best one yet.
-                                if tracker.has_data():
-                                    curr_tracked_val = self._track_best_reduce_fn(
-                                        np.asarray(tracker.get_time_series()[self._track_best_key]))
-                                    do_best = curr_tracked_val is not None and curr_tracked_val > self._last_best_tracked_val
-
-                            if do_best:
-                                self._last_best_tracked_val = curr_tracked_val
-                                self._last_best_env_train_ep = self._current_env_train_ep
-                                logger.info(
-                                    f"Saving best model: tracker = {self._track_best_name}, {self._track_best_key} = {curr_tracked_val}")
-
-                                # also writing this only on saves.
-                                if self._summary_writer is not None:
-                                    self._summary_writer.add_scalar(f"{self._track_best_name}/{self._track_best_key}_BEST", self._last_best_tracked_val, self._current_step)
-
-                            self._save(chkpt=is_next_cycle(self._current_step, self._save_checkpoint_every_n_steps),
-                                       best=do_best)
-
-                    # SAVE DATA
-                    for i in range(len(self._datasets_train)):
-                        if is_next_cycle(self._current_step, self._save_data_train_every_n_steps[i]):
-                            with timeit('save_data_train'):
-                                self._datasets_train[i].save()
-
-                    for i in range(len(self._datasets_holdout)):
-                        if is_next_cycle(self._current_step, self._save_data_holdout_every_n_steps[i]):
-                            with timeit('save_data_holdout'):
-                                self._datasets_holdout[i].save()
-
-                # update step
+                # update step (after taking the train step)
                 self._current_step += 1
 
+                """ Eval, saving, and logging actions """
+                # environment rollouts
+                if not separate_eval and self._current_step >= self._block_env_on_first_n_steps:
+                    obs_train, goal_train, obs_holdout, goal_holdout = self.eval_step(obs_train, goal_train,
+                                                                                      obs_holdout, goal_holdout)
+
+                # SAVE MODEL
+                if is_next_cycle(self._current_step, self._save_every_n_steps):
+                    with timeit('save'):
+                        do_best = False
+                        # compare if tracker name is valid and new episodes have been rolled out.
+                        if self._track_best_name in self._trackers.leaf_keys() and \
+                                self._current_env_train_ep > self._last_best_env_train_ep:
+                            tracker = self._trackers[self._track_best_name]
+                            # if there's data, save if this is the best one yet.
+                            if tracker.has_data():
+                                curr_tracked_val = self._track_best_reduce_fn(
+                                    np.asarray(tracker.get_time_series()[self._track_best_key]))
+                                do_best = curr_tracked_val is not None and curr_tracked_val > self._last_best_tracked_val
+
+                        if do_best:
+                            self._last_best_tracked_val = curr_tracked_val
+                            self._last_best_env_train_ep = self._current_env_train_ep
+                            logger.info(
+                                f"Saving best model: tracker = {self._track_best_name}, {self._track_best_key} = {curr_tracked_val}")
+
+                            # also writing this only on saves.
+                            if self._summary_writer is not None:
+                                self._summary_writer.add_scalar(f"{self._track_best_name}/{self._track_best_key}_BEST", self._last_best_tracked_val, self._current_step)
+
+                        self._save(chkpt=is_next_cycle(self._current_step, self._save_checkpoint_every_n_steps),
+                                   best=do_best)
+
+                # SAVE DATA
+                for i in range(len(self._datasets_train)):
+                    if is_next_cycle(self._current_step, self._save_data_train_every_n_steps[i]):
+                        with timeit('save_data_train'):
+                            self._datasets_train[i].save()
+
+                for i in range(len(self._datasets_holdout)):
+                    if is_next_cycle(self._current_step, self._save_data_holdout_every_n_steps[i]):
+                        with timeit('save_data_holdout'):
+                            self._datasets_holdout[i].save()
+
+            # log (outside of timeit)
             if is_next_cycle(self._current_step, self._log_every_n_steps):
                 self._log()
