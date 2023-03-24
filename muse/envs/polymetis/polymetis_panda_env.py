@@ -76,7 +76,7 @@ class PolymetisPandaEnv(Env, VRInterface):
         self.dt = 1. / self.hz
         self.do_kinesthetic = get_with_default(params, "do_kinesthetic", False)
         self.use_gripper = get_with_default(params, "use_gripper", True)
-        self.delta_pivot = get_with_default(params, "delta_pivot", "ground-truth")
+        self.delta_pivot = get_with_default(params, "delta_pivot", "eval")
         self.franka_ip = get_with_default(params, "franka_ip", "172.16.0.1")
 
         self.action_space = get_with_default(params, "action_space", "ee-euler-delta")
@@ -337,6 +337,9 @@ class PolymetisPandaEnv(Env, VRInterface):
                     next_pos = self.expected_ee_euler[:3] = self.expected_ee_euler[:3] + action[:3]
                     self.expected_ee_euler[3:] = add_euler(action[3:6], self.expected_ee_euler[3:])
                     next_quat = euler2quat(self.expected_ee_euler[3:])
+                elif self.delta_pivot ==  "eval":
+                    next_pos = self.expected_ee_euler[:3] = self.current_ee_pose[:3] + 0.25*(self.expected_ee_euler[:3]-self.current_ee_pose[:3]) + action[:3]
+                    next_quat = quat_multiply(euler2quat(action[3:6]), self.current_ee_rot)
                 else:
                     raise ValueError(f"Delta Pivot `{self.delta_pivot}` not supported!")
 
