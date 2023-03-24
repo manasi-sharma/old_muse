@@ -87,7 +87,7 @@ class SpaceMouseInterface:
         rot_sensitivity (float): Magnitude of scale input rotation commands scaling
     """
 
-    def __init__(self, vendor_id=9583, product_id=50734, pos_sensitivity=1.0, rot_sensitivity=2.0, action_scale=0.08):
+    def __init__(self, vendor_id=9583, product_id=50734, pos_sensitivity=1.0, rot_sensitivity=4.0, action_scale=0.08):
         print("Opening SpaceMouse device")
         # print(hid.enumerate())
         # print(vendor_id, product_id)
