@@ -315,6 +315,7 @@ class HydraSparseMLPActionDecoder(HydraActionDecoder):
         Argument("sparse_dropout_p", type=float, default=0),
         Argument("sparse_mlp_size", type=int, default=128),
         Argument("sparse_mlp_depth", type=int, default=3),
+        Argument("mp_rnn_type", type=str, default="gru"),
     ]
 
     def get_default_sparse_decoder_params(self) -> d:
@@ -342,7 +343,7 @@ class HydraSparseMLPActionDecoder(HydraActionDecoder):
             mode_key=self.mode_key,
             mode_prob_out_name=self.mode_prob_out_name,
 
-            rnn_type="gru",
+            rnn_type=self.mp_rnn_type,
             hidden_size=self.mode_head_size,
             mlp_size=0,
             rnn_depth=2,

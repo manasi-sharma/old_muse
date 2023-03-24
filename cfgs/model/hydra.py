@@ -59,6 +59,7 @@ export = d(
         sparse_action_names=F('../sparse_action_names'),
         mode_key='mode',
         rnn_type='lstm',
+        mp_rnn_type='lstm',
         use_policy_dist=False,
         policy_num_mix=1,
         use_policy_dist_mean=False,

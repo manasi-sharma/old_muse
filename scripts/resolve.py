@@ -15,4 +15,4 @@ if __name__ == '__main__':
     print("----------------------- EXPERIMENT -----------------------")
     print(f"exp_name = {exp_name}")
     # print("common_params = " + params.pprint(ret_string=True, str_max_len=None))
-    print("params=" + params.pprint(ret_string=True))
+    print("params=" + params.pprint(ret_string=True, str_max_len=100))
