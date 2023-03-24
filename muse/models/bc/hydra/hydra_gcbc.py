@@ -77,7 +77,7 @@ class HydraGCBC(BaseGCBC):
         with timeit(f'loss/policy_mode1_loss'):
             mode_action_losses.append(
                 self.mode1_loss_fn(self, model_outputs, inputs, outputs, i=i, writer=writer,
-                                   writer_prefix=writer_prefix + f"mode1_/",
+                                   writer_prefix=writer_prefix + f"mode1_",
                                    **kwargs))
 
             coeffs.append(torch.where(true_mode == 1, 1 - self.gamma, self.gamma).view(B, H))

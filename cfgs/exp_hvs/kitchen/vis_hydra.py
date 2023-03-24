@@ -52,7 +52,7 @@ export = kitchen_vis_bcrnn.export & d(
         policy_out_norm_names=['target/position'],
         mode_key="mode",
         fill_extra_policy_names=True,
-        online_action_postproc_fn=get_rs_online_action_postproc_fn(no_ori=False, fast_dynamics=True),
+        online_action_postproc_fn=get_rs_online_action_postproc_fn(no_ori=True, fast_dynamics=True),
         is_terminated_fn=get_timeout_terminate_fn(1200),
     ),
 )

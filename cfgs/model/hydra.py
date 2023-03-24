@@ -2,7 +2,7 @@ from configs.fields import Field as F
 from muse.models.bc.hydra.hydra_decoder import HydraRNNActionDecoder
 from muse.models.bc.hydra.hydra_gcbc import HydraGCBC
 from muse.models.model import Model
-from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn
+from muse.utils.loss_utils import get_default_mae_action_loss_fn, mse_err_fn, get_default_nll_loss_fn
 from attrdict import AttrDict as d
 
 export = d(
@@ -13,6 +13,7 @@ export = d(
 
     normalize_states=False,
     save_action_normalization=True,
+    use_policy_dist=False,
     use_mode_predictor=False,
 
     # hydra model/loss specific
@@ -31,9 +32,13 @@ export = d(
     mode0_loss_fn=F('sparse_action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x,
                                                                                     vel_act=False, err_fn=mse_err_fn,
                                                                                     policy_out_norm_names=x)),
-    mode1_loss_fn=F('action_names', lambda x: get_default_mae_action_loss_fn(policy_out_names=x, vel_act=True,
-                                                                             err_fn=mse_err_fn,
-                                                                             policy_out_norm_names=[])),
+    mode1_loss_fn=F(['use_policy_dist', 'action_names'],
+                    lambda pd, x: get_default_nll_loss_fn(x, policy_out_norm_names=[], vel_act=True)
+                    if pd else
+                    get_default_mae_action_loss_fn(x, max_grab=None,
+                                                   err_fn=mse_err_fn, vel_act=True,
+                                                   policy_out_norm_names=[])
+                    ),
 
     # names
     goal_names=['object'],
@@ -50,7 +55,8 @@ export = d(
 
     model_order=['proprio_encoder', 'action_decoder'],
     action_decoder=d(
-        exp_name='_{rnn_type}-hs{hidden_size}-ps{action_head_size}-ms{mode_head_size}{?use_policy_dist:-pd}'
+        exp_name='_{rnn_type}-hs{hidden_size}-ps{action_head_size}-ms{mode_head_size}'
+                 '{?use_policy_dist:-pd{policy_num_mix}}'
                  '_sms{sparse_mlp_size}',
         cls=HydraRNNActionDecoder,
         use_mode_predictor=F('../use_mode_predictor'),
@@ -60,7 +66,7 @@ export = d(
         mode_key='mode',
         rnn_type='lstm',
         mp_rnn_type='lstm',
-        use_policy_dist=False,
+        use_policy_dist=F('../use_policy_dist'),
         policy_num_mix=1,
         use_policy_dist_mean=False,
         policy_sig_min=1e-05,

@@ -19,7 +19,7 @@ export = hydra.export & d(
         image_shape=F('image_shape'),
     ),
 
-    head_size=400,
+    head_size=1000,
     action_decoder=d(
         hidden_size=1000,
     )

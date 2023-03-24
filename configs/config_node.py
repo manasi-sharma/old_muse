@@ -124,7 +124,8 @@ class ConfigNode:
         if global_params is None:
             global_params = node_params
 
-        local_params, _ = cu.filter_local_and_group_params(node_params)
+        # go through and process all the fields with the command line updated values at this level (and global)
+        local_params, _ = cu.filter_local_and_group_params(out_d)
         for key, item in local_params.leaf_items():
             if isinstance(item, Field):
                 out_d[key] = item.process(key, local_params, global_params, path=self.full_name)
