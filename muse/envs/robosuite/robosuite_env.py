@@ -37,6 +37,7 @@ class RobosuiteEnv(Env):
         self._ego_imgs = get_with_default(params, "ego_imgs", False)
         self._img_postproc = get_with_default(params, "img_postproc", False)
         self._done_on_success = get_with_default(params, "done_on_success", False)
+        self._parse_objects = get_with_default(params, "parse_objects", False)
 
         # disables orientation control
         self._no_ori = get_with_default(params, "no_ori", False)
@@ -232,6 +233,11 @@ class RobosuiteEnv(Env):
             if "_eef_quat" in k:
                 # copy ensures it is contiguous
                 obs[k.replace('_eef_quat', '_eef_eul')] = transform_utils.quat2euler(obs[k]).copy()
+
+        # parse the object fields for this environment ( bc robosuite flattens everything :/ )
+        if self._parse_objects and 'object' in obs:
+            obs.combine(get_ordered_objects_from_arr(self, obs['object'])[0])
+
         return obs.leaf_apply(lambda arr: arr[None])
 
     def is_success(self):
@@ -278,20 +284,25 @@ class RobosuiteEnv(Env):
         ego_imgs = get_with_default(params, "ego_imgs", False)
 
         no_ori = get_with_default(params, "no_ori", False)
+        parse_objects = get_with_default(params, "parse_objects", False)
 
         if name == "NutAssemblySquare":
+            n_obj = 1
             obdim = 14
             img_height = img_height or 84
             img_width = img_width or 84
         elif name == "ToolHang":
+            n_obj = 3
             obdim = 44
             img_height = img_height or 240
             img_width = img_width or 240
         elif name == "PickPlaceCan":
+            n_obj = 1
             obdim = 14
             img_height = img_height or 84
             img_width = img_width or 84
         elif name == "KitchenEnv":
+            n_obj = 4
             obdim = 70  # not used
             img_height = img_height or 128
             img_width = img_width or 128
@@ -305,6 +316,9 @@ class RobosuiteEnv(Env):
                 ("ego_image", (img_height, img_width, 3), (0, 255), np.uint8),
 
                 ("object", (obdim,), (-np.inf, np.inf), np.float32),
+                ("objects/position", (n_obj, 3), (-np.inf, np.inf), np.float32),
+                ("objects/orientation", (n_obj, 4), (-np.inf, np.inf), np.float32),
+                ("objects/orientation_eul", (n_obj, 3), (-np.inf, np.inf), np.float32),
                 ("robot0_eef_pos", (3,), (-np.inf, np.inf), np.float32),
                 ("robot0_eef_eul", (3,), (-np.pi, np.pi), np.float32),
                 ("robot0_eef_quat", (4,), (-1., 1.), np.float32),
@@ -359,6 +373,11 @@ class RobosuiteEnv(Env):
             prms.observation_names = ["object", "robot0_eef_pos", "robot0_eef_eul", "robot0_eef_quat",
                                       "robot0_gripper_qpos", "robot0_joint_pos"]
             prms.output_observation_names = []
+
+        if parse_objects:
+            # parse flat object into useful keys (environment dependent)
+            prms.observation_names.remove('object')
+            prms.observation_names.extend(['objects/position', 'objects/orientation', 'objects/orientation_eul'])
 
         if no_ori:
             if 'robot0_eef_quat' in prms.observation_names:

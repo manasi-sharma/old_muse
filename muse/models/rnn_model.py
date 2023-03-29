@@ -11,7 +11,7 @@ from muse.utils.param_utils import LayerParams, SequentialParams, build_mlp_para
 from muse.utils.general_utils import timeit, is_next_cycle
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
-from muse.utils.torch_utils import concatenate, combine_after_dim
+from muse.utils.torch_utils import concatenate, combine_after_last_dim
 
 
 # 1 input, split into N outputs via a split function
@@ -133,7 +133,9 @@ class RnnModel(BasicModel):
         # move to torch and reshape to be concatenate-able
         for key in self.inputs:
             inputs[key] = inputs[key].to(dtype=self.concat_dtype)
-            inputs[key] = combine_after_dim(inputs[key], self.concat_dim)
+
+        # combine after the last dim (default 2)
+        inputs = combine_after_last_dim(inputs > self.inputs, max_dim=2)
 
         # likely, B x H x ...
         # a sequence of inputs.

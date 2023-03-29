@@ -17,7 +17,7 @@ from muse.utils.param_utils import SequentialParams, LayerParams, build_mlp_para
 from muse.utils.general_utils import timeit
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
-from muse.utils.torch_utils import concatenate
+from muse.utils.torch_utils import concatenate, combine_after_last_dim
 
 
 class BasicModel(Model):
@@ -86,8 +86,10 @@ class BasicModel(Model):
             each_obs = [inputs[key] for key in input_names]
             each_obs = [arr.to(dtype=concat_dtype) for arr in each_obs]
         else:
+            # flatten after the last dim, concat
+            inputs = combine_after_last_dim(inputs > input_names, max_dim=2)
             with timeit(f'{timeit_prefix}cat'):
-                obs = concatenate((inputs > input_names)
+                obs = concatenate(inputs
                                   .leaf_apply(lambda arr: arr.to(dtype=concat_dtype)),
                                   input_names, dim=concat_dim)
             each_obs = [obs]

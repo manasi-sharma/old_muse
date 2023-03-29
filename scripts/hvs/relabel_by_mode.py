@@ -124,7 +124,7 @@ if __name__ == '__main__':
             params.env_spec.action_names.remove(k)
 
     # create a param env spec, since data we are loading will not have certain keys
-    env_spec = ParamEnvSpec(params.env_spec)
+    env_spec = ParamEnvSpec(params.env_spec.leaf_copy())
 
     logger.debug(f"mode0 names: {params.env_spec.mode0_action_names}")
     logger.debug(f"mode1 names: {params.env_spec.mode1_action_names}")
@@ -153,6 +153,7 @@ if __name__ == '__main__':
     output_file = file_path_with_default_dir(local_args.output_file, file_manager.data_dir, expand_user=True)
     params[local_args.dataset_out_group].file = 'none.npz'  # no load
     params[local_args.dataset_out_group].output_file = output_file
+    params[local_args.dataset_out_group].frozen = False
     dataset_out = params[local_args.dataset_out_group].cls(params[local_args.dataset_out_group], env_spec_out, file_manager)
 
     """ Go through each episode, and relabel (either with state rollout, or just action relabel) """
