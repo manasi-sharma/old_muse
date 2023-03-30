@@ -7,6 +7,7 @@ from attrdict.utils import get_with_default
 class EnvSpec(Spec):
 
     def __init__(self, params):
+        params = params.leaf_copy()
         self._done_key = get_with_default(params, "done_key", "done", map_fn=str)
         names_shapes_limits_dtypes = list(params.names_shapes_limits_dtypes)
         names_shapes_limits_dtypes += [(self._done_key, (), (False, True), np.bool),

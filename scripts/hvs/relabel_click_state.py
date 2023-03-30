@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from attrdict import AttrDict
 
+from muse.datasets.np_dataset import NpDataset
 from muse.experiments import logger
 from muse.experiments.file_manager import ExperimentFileManager, FileManager
 from muse.utils.file_utils import file_path_with_default_dir
@@ -28,14 +29,11 @@ if __name__ == '__main__':
     parser.add_argument('--image_key', type=str, required=True)  # ignore for now
     parser.add_argument('--click_key', type=str, default='click_state')  # ignore for now
     parser.add_argument('--flip_imgs', action="store_true")
-    parser.add_argument('--horizon', type=int, default=None)  # ignore for now
     parser.add_argument('--start_ep', type=int, default=0)  # which episode to start at
 
     # file_manager = ExperimentFileManager(params.exp_name, is_continue=True)
-    args, unknown = parser.parse_local_args()
+    args, unknown = parser.parse_known_args()
     # register_config_args(unknown)
-
-    ordered_modules = ['env_spec', 'env_train', 'dataset_train', 'dataset_out']
 
     # load the config
     params, root = load_base_config(args.config, unknown)
@@ -48,37 +46,41 @@ if __name__ == '__main__':
         file_manager = ExperimentFileManager('test', is_continue=True)
 
     exit_on_ctrl_c()
-    env_spec = params.env_spec.cls(params.env_spec.params)
+    # if args.image_key not in params.env_spec.observation_names:
+    #     params.env_spec.observation_names.append(args.image_key)
+    env_spec = params.env_spec.cls(params.env_spec)
 
-    mk = args.click_key
+    click_key = args.click_key
 
-    if args.horizon is not None:
-        params.dataset_train.params.horizon = args.horizon
+    # create dataset train (input)
+    dataset_params = AttrDict(
+        file=args.file,
+        output_file='none.npz',
+        batch_size=1,
+        horizon=1,
+        capacity=1e5,  # single episode, get_batch returns (1, H, ...)
+    )
+    dataset_input = NpDataset(dataset_params, env_spec, file_manager)
 
-    horizon = params.dataset_train.params.horizon
+    env_spec_out_prms = params.env_spec.leaf_copy()
 
-    params.dataset_train.params.file = args.file
-    params.dataset_train.params.batch_size = 1  # single episode, get_batch returns (1, H, ...)
-    dataset_input = params.dataset_train.cls(params.dataset_train.params, env_spec, file_manager)
-    sampler_in = dataset_input.sampler
-    # params.dataset_train.params.file = None
-    # params.dataset_train.params.output_file = args.output_file
-    # dataset_output = params.dataset_train.cls(params.dataset_train.params, env_spec, file_manager)
-
-    env_spec_out_prms = params.env_spec.params.leaf_copy()
-
-    if mk not in params.env_spec.params >> 'action_names':
+    # add click key to action names
+    if click_key not in env_spec_out_prms['action_names']:
         logger.warn("Mode key not present in input. Will add to output")
-        env_spec_out_prms.action_names.extend([mk])
-
+        env_spec_out_prms.action_names.extend([click_key])
     env_spec_out = params.env_spec.cls(env_spec_out_prms)
+
+    # create dataset out
     output_file = file_path_with_default_dir(args.output_file, file_manager.data_dir, expand_user=True)
+    dataset_out_params = dataset_params.leaf_copy()
+
     if args.load_file is None:
-        params.dataset_out.params.file = 'none.npz'  # no load
+        dataset_out_params.file = 'none.npz'  # no load
     else:
-        params.dataset_out.params.file = [args.load_file]
-    params.dataset_out.params.output_file = output_file
-    dataset_out = params.dataset_out.cls(params.dataset_out.params, env_spec_out, file_manager)
+        dataset_out_params.file = args.load_file
+
+    dataset_out_params.output_file = output_file
+    dataset_out = NpDataset(dataset_out_params, env_spec_out, file_manager)
 
     eval_datadict = AttrDict()
 
@@ -103,8 +105,8 @@ if __name__ == '__main__':
 
         batch_len = min(outputs.done.shape[0], inputs[args.image_key].shape[0])
 
-        if not inputs.has_leaf_key(mk):
-            inputs[mk] = np.zeros((batch_len, 1))  # match 1 x H x
+        if not inputs.has_leaf_key(click_key):
+            inputs[click_key] = np.zeros((batch_len, 1))  # match 1 x H x
 
         start_inputs = inputs.leaf_apply(lambda arr: arr[0])
         end_inputs = inputs.leaf_apply(lambda arr: arr[-1])
@@ -113,7 +115,7 @@ if __name__ == '__main__':
         while i < batch_len:
             logger.debug("Ep %d: [%d] press n = next, p = prev, q = next batch, esc = end.." % (ep, i))
             img = inputs[args.image_key][i]
-            mode = inputs[mk][i]
+            mode = inputs[click_key][i]
             if args.flip_imgs:
                 img = img[..., ::-1]
             img = img.astype(np.uint8)
@@ -126,15 +128,15 @@ if __name__ == '__main__':
             # print("bp:", (inputs >> "block_positions")[0, i, 0])
             ret = cv2.waitKey(0)
             if ret == ord('m'):  # Mark.
-                inputs[mk][i] = 1
+                inputs[click_key][i] = 1
                 if i < batch_len - 1:
                     i += 1  # stops once it reaches the last frame. only next will loop around.
             elif ret == 127:  # back space
-                inputs[mk][i] = 0
+                inputs[click_key][i] = 0
                 if i > 0:
                     i -= 1
             elif ret == ord('f'):  # toggle
-                inputs[mk][i] = 1 - inputs[mk][i]
+                inputs[click_key][i] = 1 - inputs[click_key][i]
             elif ret == ord('n'):  # next
                 i = (i + 1) % batch_len
             elif ret == ord(']'):  # next double speed
