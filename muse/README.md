@@ -26,7 +26,7 @@ A `Dataset` defines:
 - `get_num_episodes()`: Number of episodes in the dataset
 
 ### muse.datasets.samplers
-Samplers (`muse.datasets.samplers.sampler.Sampler`) are responsible for getting the indices used for `get_batch`, however each dataset defines some default sampling behavior if `indices=None`. The sampler will only be created in the trainer (see [trainers](##muse.trainers)), potentially using multiple datasets.
+Samplers (`muse.datasets.samplers.sampler.Sampler`) are responsible for getting the indices used for `get_batch`, however each dataset defines some default sampling behavior if `indices=None`. The sampler will only be created in the trainer (see [trainers](#musetrainers)), potentially using multiple datasets.
 
 A sampler is instantiated with a single or list of datasets, and has the following methods:
 - `get_indices()`: Gets the indices of the dataset's batch size
@@ -67,8 +67,8 @@ See `build_mlp_param_list()` in `muse.utils.param_utils` for an example of what 
 See `RnnModel` for a recurrent structure model, which we use for most experiments.
 
 `Model` defines the following:
-- `pretrain(datasets_holdout=None)`: Any actions to run when the model is created, e.g. preprocessing some inputs and adding them to the dataset(s). See [trainers](##muse.trainers) for an example of when pretraining can be performed.
-- `load_statistics(dd)`: Compute statistics using the linked training dataset (`self._dataset_train`), and save it internally to the torch means / stds. See [trainers](##muse.trainers) for an example of when statistics are loaded.
+- `pretrain(datasets_holdout=None)`: Any actions to run when the model is created, e.g. preprocessing some inputs and adding them to the dataset(s). See [trainers](#musetrainers) for an example of when pretraining can be performed.
+- `load_statistics(dd)`: Compute statistics using the linked training dataset (`self._dataset_train`), and save it internally to the torch means / stds. See [trainers](#musetrainers) for an example of when statistics are loaded.
 - `normalize_by_statistics(inputs, names, ...)`: Normalize names in AttrDict inputs using computed dataset statistics. Models should be responsible for normalization to avoid bugs later on. Supports unnormalization using `inverse=True`.
 - `forward(inputs, ...)`: Default behavior just does optional normalization. Override in subclasses.
 - `loss(inputs, outputs, ...)`: Compute some loss that can be used by an external optimizer. The default behavior here is to call `self._loss_fn` passed in params, or to use any internally defined metrics.
@@ -118,8 +118,8 @@ GoalTrainer defines a hierarchical evaluation paradigm, supporting:
 - `goal_policy_holdout` [optional]
 - `reward` [optional]: a reward module that will be used to compute rewards
 - `writer` [optional]: a writer instance to use for logging, if None will create a tensorboard writer.
-- `optimizer` [optional]: optimizer to use, see [optimizers](###muse.trainers.optimizers)
-- `sampler` [optional]: sampler parameters (AttrDict), see [samplers](####muse.datasets.samplers). This should have a cls field. If provided, this cls will be used to create samplers for each dataset, using all the provided datasets. See below for how each sampler is instantiated.
+- `optimizer` [optional]: optimizer to use, see [optimizers](#musetrainersoptimizers)
+- `sampler` [optional]: sampler parameters (AttrDict), see [samplers](#musedatasetssamplers). This should have a cls field. If provided, this cls will be used to create samplers for each dataset, using all the provided datasets. See below for how each sampler is instantiated.
 
 **Sampling**: By default, `GoalTrainer` creates samplers and samples from datasets in the following way:
 1. On init, create a sampler instance using either provided `sampler` params or using each dataset's `get_sampler()` function.
