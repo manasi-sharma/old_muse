@@ -4,7 +4,6 @@ from typing import Sized
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
 
-from muse.datasets.samplers.sampler import Sampler
 from muse.envs.env_spec import EnvSpec
 from muse.experiments import logger
 from muse.utils import abstract
@@ -66,6 +65,7 @@ class Dataset(abstract.BaseClass, Sized, TD.IterableDataset):
         raise NotImplementedError
 
     def _init_params_to_attrs(self, params):
+        from muse.datasets.samplers.sampler import Sampler
         # default sampler to use in trainer, etc.
         self._sampler_config = get_with_default(params, "sampler", d(cls=Sampler))
         self._default_sampler_cls = self._sampler_config.cls
