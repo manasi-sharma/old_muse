@@ -9,6 +9,7 @@ from muse.experiments import logger
 from muse.utils.transform_utils import quat_difference, quat2euler
 
 import numpy as np
+from typing import Union
 
 GRIPPER_TOLERANCE = 0.01
 
@@ -16,7 +17,8 @@ GRIPPER_TOLERANCE = 0.01
 class ReplayPolicy(Policy):
 
     def _init_params_to_attrs(self, params):
-        self._demo_file = params["demo_file"]
+        # self._demo_file = params["demo_file"]
+        self._demo_file = get_with_default(params, "demo_file", "NULL")
         self._action_names = get_with_default(params, "action_names", self._out_names)
         self._ee_pose_keys = ['ee_position', 'ee_orientation']
         assert set(self._action_names).issubset(self._env_spec.all_names)
@@ -26,10 +28,16 @@ class ReplayPolicy(Policy):
 
         self._old_format = False
 
-    def reload_data(self, demo_file):
+    def reload_data(self, demo_file: Union[str, np.array]):
         self._demo_file = demo_file
-        logger.debug(f'Loading demo file: {self._demo_file}')
-        self._demo_data = np.load(self._demo_file, allow_pickle=True)
+        if isinstance(demo_file, str):
+            logger.debug(f'Loading demo file: {self._demo_file}')
+            self._demo_data = np.load(self._demo_file, allow_pickle=True)
+        elif isinstance(demo_file, dict):
+            self._demo_data = demo_file
+        else:
+            raise NotImplementedError('Demo type not supported')
+            
         # for key in self._demo_data.keys(): print(key)
         # lazy loading since we don't need obs
         self._demo_actions = AttrDict()
