@@ -1,15 +1,24 @@
+from typing import Union, List
+
 import numpy as np
 from attrdict.utils import get_with_default
 
+from muse.datasets.dataset import Dataset
 from muse.experiments import logger
 
 
 class Sampler:
     """
-    Sampler returns indices for a dataset.
+    Sampler returns indices for dataset(s).
     """
-    def __init__(self, dataset, params):
-        self._ds = dataset
+    def __init__(self, dataset: Union[Dataset, List[Dataset]], params):
+        if isinstance(dataset, Dataset):
+            self._ds_list = [dataset]
+            self._ds = dataset
+        else:
+            self._ds_list = dataset
+            self._ds = dataset[0]
+        self._num_datasets = len(self._ds_list)
 
     def get_indices(self, **kwargs):
         return None
@@ -18,6 +27,7 @@ class Sampler:
 class SequentialSampler(Sampler):
     def __init__(self, dataset, params):
         super(SequentialSampler, self).__init__(dataset, params)
+        assert self._num_datasets == 1, f"[{__class__}] not implemented to load from multiple datasets!"
         self._curr_idx = None
         self._bs = self._ds.batch_size
         self._shuffle = get_with_default(params, "shuffle", True)
@@ -62,6 +72,9 @@ class SequentialSampler(Sampler):
 
 
 class WeightedSequentialSampler(SequentialSampler):
+    """
+    Sample weighted by some "mode", each mode will have its own class.
+    """
 
     def __init__(self, dataset, params):
         super(WeightedSequentialSampler, self).__init__(dataset, params)

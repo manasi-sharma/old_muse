@@ -120,7 +120,7 @@ The policy config will be responsible for providing the right `policy_model_forw
 
 ### muse.trainers
 Trainers compose all the above modules into a training algorithm, involving optimizers, model losses, saving checkpoints, and optionally also involving stepping some environment.
-The most used classes are `muse.trainers.Trainer` and `muse.sandbox.new_trainer.goal_trainer.GoalTrainer`.
+The most used classes are `muse.trainers.Trainer` and `muse.trainers.goal_trainer.GoalTrainer`.
 
 ### configs
 In order to set up experiments, we have a python-based configuration format, which resembles more common yaml-based configurations but allows for pythonic language in configurations, including functions, expressions, and dependent parameters.

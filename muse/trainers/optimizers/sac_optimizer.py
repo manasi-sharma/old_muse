@@ -3,11 +3,11 @@ from typing import Tuple, Callable
 from muse.experiments import logger
 from muse.models.rl.sac.sac import SACModel
 from muse.trainers.optimizers.optimizer import MultiOptimizer
-from timeit
-from muse.utils.general_utils import is_next_cycle
+from muse.utils.general_utils import is_next_cycle, timeit
 from muse.utils.loss_utils import soft_update_params
 
 from attrdict import AttrDict as d
+
 
 class SACOptimizer(MultiOptimizer):
 

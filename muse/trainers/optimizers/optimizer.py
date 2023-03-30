@@ -1,3 +1,5 @@
+from abc import ABC
+
 import torch.nn as nn
 from typing import List
 
@@ -9,6 +11,12 @@ from attrdict.utils import get_with_default
 
 
 class Optimizer(object):
+    """
+    Optimizers define a step() call that updates a model given a loss.
+    This encompasses schedulers as well (see SingleOptimizer)
+
+    See GoalTrainer for an example of how to use one.
+    """
     def __init__(self, params: d, model: Model, datasets: List[Dataset] = None):
         self._model = model
         self._params = params.leaf_copy()
@@ -37,6 +45,15 @@ class Optimizer(object):
 
 
 class SingleOptimizer(Optimizer):
+    """
+    The default single optimizer, which steps the model and defines a default scheduler
+
+    params:
+        get_base_optimizer: Callable that returns the torch.Optimizer given model.parameters()
+        get_base_scheduler: [optional] Callable that returns the torch Scheduler given self._optimizer
+
+
+    """
 
     def _init_params_to_attrs(self, params: d):
         super(SingleOptimizer, self)._init_params_to_attrs(params)
@@ -54,7 +71,8 @@ class SingleOptimizer(Optimizer):
         else:
             self._base_scheduler = None
 
-    def step(self, loss, inputs, outputs, dataset_idx, meta: d = d(), i=0, ti=0, writer=None, writer_prefix="", **kwargs):
+    def step(self, loss, inputs, outputs, dataset_idx, meta: d = d(), i=0, ti=0,
+             writer=None, writer_prefix="", **kwargs):
         # loss might be a dictionary potentially. TODO
         self._base_optimizer.zero_grad()
         loss.backward()
@@ -80,13 +98,26 @@ class SingleOptimizer(Optimizer):
     def param_groups(self):
         return self._base_optimizer.param_groups
 
-class MultiOptimizer(Optimizer):
+
+class MultiOptimizer(Optimizer, ABC):
+    """
+    Defines multiple optimizers (abstract).
+
+    params:
+        num_optimizers: int
+        get_optimizer: Callable that returns the torch.Optimizer given model.parameters() and an index
+        get_scheduler: [optional] Callable that returns the torch Scheduler given optimizer[index] and the index
+        loss_names: [optional] List[str] a list of the loss name for each optimizer.
+
+    Child class should define step() to use the above.
+    """
 
     def _init_params_to_attrs(self, params: d):
         super(MultiOptimizer, self)._init_params_to_attrs(params)
         self._num_optimizers = params["num_optimizers"]
         self._get_optimizer = params["get_optimizer"]
-        self._loss_names = get_with_default(params, "loss_names", None)  # if None, all optimizers use the same loss, which gets passed in.
+        # if None, all optimizers use the same loss, which gets passed in.
+        self._loss_names = get_with_default(params, "loss_names", None)
 
         # loss names are used to parse the loss dict (input).
         assert self._loss_names is None or len(self._loss_names) == self._num_optimizers, [self._loss_names, self._num_optimizers]

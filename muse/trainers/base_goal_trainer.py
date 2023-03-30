@@ -35,7 +35,6 @@ class BaseGoalTrainer:
 
         Mainly just a useful way to handle online env steps with multi-level policies.
         NOTE: env will be reset when either env is terminated or goal_policy is terminated.
-        TODO option for terminate when policy is done
 
         Parameters
         ----------
@@ -202,20 +201,21 @@ class BaseGoalTrainer:
             assert self._reload_statistics_every_n_env_steps > 0
         self._max_grad_norm = get_with_default(params, "max_grad_norm", None)
 
+        # if true, loads only the model, not the training step
         self._transfer_model_only = get_with_default(params, "transfer_model_only",
-                                                     False)  # if true, loads only the model, not the training step
+                                                     False)
+
+        # the file to use for loading the current experiment
         self._checkpoint_model_file = get_with_default(params, "checkpoint_model_file", None)
-        # self._save_checkpoints = get_with_default(params, "save_checkpoints", False)
+
+        # pretrained model file to start from
+        #   (will be loaded if no checkpoint exists or provided checkpoint doesn't exist)
+        self._pretrained_model_file = get_with_default(params, "pretrained_model_file", None)
 
         # these will be stored in env_memory.
         self._goal_policy_uses_last_n_inputs = get_with_default(params, "goal_policy_uses_last_n_inputs",
                                                                 1)  # 1 means only the last episode
         assert self._goal_policy_uses_last_n_inputs > 0
-
-        # fns
-        # self._process_env_step_output_fn = get_with_default(params, "process_env_step_output_fn",
-        #                                                     lambda env, o, g, next_obs, next_goal, po, ea, d: (
-        #                                                         next_obs, next_goal))
 
         # by default does nothing
         self._env_action_from_policy_output = get_with_default(params, "env_action_from_policy_output",
@@ -230,6 +230,19 @@ class BaseGoalTrainer:
             self._summary_writer.add_scalar("train/learning_rate_pg_%d" % i, pg['lr'], self._current_step)
 
     def _tracker_write_step(self, trackers, curr_step, force=False, debug=False):
+        """ Writes the tracker states.
+
+        Parameters
+        ----------
+        trackers
+        curr_step
+        force
+        debug
+
+        Returns
+        -------
+
+        """
         for tracker_name, tracker in trackers.leaf_items():
             if (force or is_next_cycle(curr_step, self._tracker_write_frequencies[tracker_name])) and tracker.has_data():
                 # print(f"tracker: {tracker_name} active")
@@ -283,6 +296,23 @@ class BaseGoalTrainer:
         return ret_goal
 
     def policy_step(self, model, datasets, obs, goal, env_memory: AttrDict, policy, eval_step=False):
+        """ Single step of the policy, returns the result of get_action
+
+        Parameters
+        ----------
+        model
+        datasets
+        obs
+        goal
+        env_memory
+        policy
+        eval_step
+
+        Returns
+        -------
+        action
+
+        """
         if not eval_step and self._current_step < self._random_policy_on_first_n_steps:
             # policy takes in only ob
             return policy.get_random_action(model, obs.leaf_apply(lambda arr: arr[:, None]),
@@ -317,6 +347,9 @@ class BaseGoalTrainer:
 
         Returns
         -------
+        next_obs
+        next_goal
+        done
 
         """
         if eval:
@@ -451,6 +484,9 @@ class BaseGoalTrainer:
 
         Returns
         -------
+        obs
+        goal
+        done
 
         """
         return obs, goal, done
@@ -467,6 +503,8 @@ class BaseGoalTrainer:
 
         Returns
         -------
+        obs
+        goal
 
         """
 
@@ -606,9 +644,59 @@ class BaseGoalTrainer:
             shutil.copyfile(path, os.path.join(self._file_manager.models_dir, f"best_{chkpt_base_fname}"))
             logger.debug(f"Saved best.")
 
-    def _restore_checkpoint(self):
-        if self._checkpoint_model_file is None:
+    def _restore_model_from_pretrained_checkpoint(self, checkpoint):
+        """ Defines how we copy weights from the pretrained checkpoint to brand new model.
+
+        Defaults to just transferring weights (non-strictly). Override this if you want to do something fancier.
+
+        Parameters
+        ----------
+        checkpoint:
+            torch model to load
+
+        Returns
+        -------
+
+        """
+        self._model.restore_from_checkpoint(checkpoint, strict=False)
+
+    def _restore_pretrained_checkpoint(self):
+        """ Loading behavior for a pretrained checkpoint.
+
+        Returns
+        -------
+        bool:
+            whether or not a model was loaded.
+
+        """
+        if self._pretrained_model_file is None:
             return False
+
+        # pretrained model file should exist (globally), not relative to experiment folder
+        if os.path.isfile(self._pretrained_model_file):
+            checkpoint = torch.load(str(self._pretrained_model_file), map_location=self._model.device)
+            self._restore_model_from_pretrained_checkpoint(checkpoint)
+            logger.debug(f"Loaded pretrained model from {self._pretrained_model_file}.")
+            return True
+        else:
+            raise FileNotFoundError(f"Pretrained model from {self._pretrained_model_file} cannot be found!")
+
+    def _restore_checkpoint(self):
+        """
+        Loads a checkpoint from file if specified.
+
+        If it is not specified or the provided file does not exist, it will try to load from the pretrained checkpoint.
+
+        Returns
+        -------
+        bool:
+            whether or not something was loaded (either checkpoint or pretrained_checkpoint)
+
+        """
+        if self._checkpoint_model_file is None:
+            return self._restore_pretrained_checkpoint()
+
+        # look relative to experiment folder
         path = os.path.join(self._file_manager.models_dir, self._checkpoint_model_file)
         if os.path.isfile(path):
             checkpoint = torch.load(str(path), map_location=self._model.device)
@@ -621,8 +709,8 @@ class BaseGoalTrainer:
             logger.debug(f"Loaded model from {path}, current step: {self._current_step}")
             return True
         else:
-            logger.warn("Unable to load model!")
-            return False
+            logger.warn(f"Unable to load model {path}!")
+            return self._restore_pretrained_checkpoint()
 
     def _get_save_meta_data(self):
         return {}  # TODO
