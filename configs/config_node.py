@@ -227,6 +227,10 @@ class ConfigNode:
         # things that aren't groups
         self.local_params, _ = cu.filter_local_and_group_params(self.params)
 
+        # add an option for the extra name (added to end)
+        if 'exp_name' in self.local_params and 'extra_exp_name' not in self.local_params:
+            self.local_params['extra_exp_name'] = ""
+
         # declare the arguments for the command line parser (macro-enabled, prog=group name)
         kwargs = {'formatter_class': ArgumentDefaultsHelpFormatter, 'add_help': False}
         if self.parent is None:
@@ -285,9 +289,12 @@ class ConfigNode:
         # allow support for a callable exp_name fn
         local_exp_name = self.local_exp_name
         if isinstance(local_exp_name, Callable):
-            local_exp_name = local_exp_name(self.full_params)
+            local_exp_name = local_exp_name(self.params, self.full_params)
         assert isinstance(local_exp_name, str), \
             f"Local experiment name ({local_exp_name}) should be str, but was {type(local_exp_name)}!"
+        # add extra name in
+        if 'extra_exp_name' in self.params:
+            local_exp_name += self.params['extra_exp_name']
         return cu.find_replace_brackets(local_exp_name, self.full_params)
 
     def get_exp_name(self, nested=True) -> str:

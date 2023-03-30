@@ -4,7 +4,6 @@ from typing import Sized
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
 
-from muse.datasets.samplers.sampler import Sampler
 from muse.envs.env_spec import EnvSpec
 from muse.experiments import logger
 from muse.utils import abstract
@@ -66,9 +65,11 @@ class Dataset(abstract.BaseClass, Sized, TD.IterableDataset):
         raise NotImplementedError
 
     def _init_params_to_attrs(self, params):
+        from muse.datasets.samplers.sampler import Sampler
+        # default sampler to use in trainer, etc.
         self._sampler_config = get_with_default(params, "sampler", d(cls=Sampler))
-        self._sampler_cls = self._sampler_config.cls
-        self._sampler_prms = self._sampler_config.leaf_filter(lambda k, v: k != 'cls')
+        self._default_sampler_cls = self._sampler_config.cls
+        self._default_sampler_prms = self._sampler_config.leaf_filter(lambda k, v: k != 'cls')
 
         self._done_key = get_with_default(params, "done_key", "done", map_fn=str)
         self._use_rollout_steps = get_with_default(params, "use_rollout_steps", True)
@@ -270,10 +271,25 @@ class Dataset(abstract.BaseClass, Sized, TD.IterableDataset):
     def save_dir(self):
         return None
 
-    @property
-    def sampler(self):
+    def get_sampler(self, extra_datasets=()):
+        """ Gets a Sampler instance for this dataset.
+
+        This can be used by trainers, for example.
+
+        Parameters
+        ----------
+        extra_datasets
+
+        Returns
+        -------
+
+        """
+        dataset = self
+        if len(extra_datasets) > 0:
+            dataset = [dataset] + list(extra_datasets)
+
         # creates a new sampler and returns it
-        return self._sampler_cls(self, self._sampler_prms)
+        return self._default_sampler_cls(dataset, self._default_sampler_prms)
 
     def split_into_inout(self, dc, include_done=True):
         inputs, outputs = d(), d()

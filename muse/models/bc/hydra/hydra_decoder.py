@@ -164,6 +164,7 @@ class HydraActionDecoder(ActionDecoder):
             decoder_outs = self.decoder(inputs, timeit_prefix="decoder/", **self.get_kwargs('decoder', kwargs))
 
         out = d()
+        out['decoder'] = decoder_outs
 
         if self.use_mode_predictor:
             assert self.policy_raw_out_name in decoder_outs, \
@@ -174,15 +175,15 @@ class HydraActionDecoder(ActionDecoder):
             assert mode_outs.has_leaf_keys([self.mode_key, self.mode_prob_out_name, self.mode_logit_out_name]), \
                 "Missing mode, prob, and logit!"
             out['mode_predictor'] = mode_outs
-            out['decoder'] = decoder_outs
-            out = out & decoder_outs & mode_outs
+            # move mode stuff to top level
+            out = out & (mode_outs > [self.mode_key, self.mode_prob_out_name, self.mode_logit_out_name])
             assert self.mode_classifier_noise == 0., "Mode classifier noise not implemented for separate network yet!"
             assert self.mode_classifier_flip_prob == 0., \
                 "Mode classifier flip prob not implemented for separate network yet!"
         else:
             with timeit('mode_action_heads'):
                 # compute mode from inner model output partial embedding
-                embedding = decoder_outs[self.policy_raw_out_name]
+                embedding = out.decoder[self.policy_raw_out_name]
 
                 mp_logit = self.mode_head(embedding)
                 probs = out[self.mode_prob_out_name] = F.softmax(mp_logit, dim=-1)
@@ -204,13 +205,11 @@ class HydraActionDecoder(ActionDecoder):
 
                 out[self.mode_key] = torch.argmax(probs, dim=-1, keepdim=True)
 
-                out.combine(decoder_outs)
-                out['decoder'] = decoder_outs
-
-                out[self.policy_raw_out_name] = self.action_head(embedding)
+                # run the decoder output through the action head
+                out.decoder[self.policy_raw_out_name] = self.action_head(embedding)
 
         # cap the end of the policy (action cap)
-        out[self.policy_raw_out_name] = self.action_cap(out[self.policy_raw_out_name])
+        out.decoder[self.policy_raw_out_name] = self.action_cap(out.decoder[self.policy_raw_out_name])
 
         # run sparse model
         with timeit('sparse_decoder'):
@@ -223,18 +222,18 @@ class HydraActionDecoder(ActionDecoder):
 
         # cap the end of the sparse policy (sparse_decoder)
         sparse_outs[self.sparse_raw_out_name] = self.sparse_action_cap(sparse_outs[self.sparse_raw_out_name])
-        out.combine(sparse_outs)
         out.sparse_decoder = sparse_outs
 
         # parse the action names from either vector or distribution.
-        ac_dc = self.parse_raw_action(self.env_spec, out[self.policy_raw_out_name], self.action_names,
+        ac_dc = self.parse_raw_action(self.env_spec, out.decoder[self.policy_raw_out_name], self.action_names,
                                       use_mean=self.use_policy_dist_mean, sample_cat=self.policy_sample_cat)
 
         # parse the sparse names from either vector or distribution.
-        spac_dc = self.parse_raw_action(self.env_spec, out[self.sparse_raw_out_name],
+        spac_dc = self.parse_raw_action(self.env_spec, out.sparse_decoder[self.sparse_raw_out_name],
                                         self.sparse_action_names, use_mean=self.sparse_use_policy_dist_mean,
                                         sample_cat=self.sparse_policy_sample_cat)
 
+        # combine the top level with the parsed actions
         out.combine(ac_dc)
         out.combine(spac_dc)
 

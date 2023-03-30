@@ -709,8 +709,7 @@ class NpDataset(Dataset):
             names_to_get = names
 
         names_to_get = names_to_get + [self._done_key] + \
-                       (["rollout_timestep"] if self._use_rollout_steps else []) + \
-                       self.temporary_names
+                       (["rollout_timestep"] if self._use_rollout_steps else []) + self.temporary_names
 
         meta = d()
         if self._index_all_keys:
@@ -719,12 +718,16 @@ class NpDataset(Dataset):
                                                                          local_batch_size,
                                                                          chunk_lengths, do_padding, self.horizon,
                                                                          np_pad=np_pad, torch_device=torch_device)
+            inputs['indices'] = indices.reshape(local_batch_size, -1)
+            if torch_device is not None:
+                inputs.indices = to_torch(inputs.indices, device=torch_device)
 
         else:
             inputs, outputs = self._get_batch_index_into_datadict(indices, episode_indices, names_to_get,
                                                                   local_batch_size,
                                                                   chunk_lengths, do_padding, self.horizon,
                                                                   np_pad=np_pad)
+            inputs['indices'] = indices.reshape(local_batch_size, -1)
 
             with timeit("get_batch/to_device"):
                 if torch_device is not None:

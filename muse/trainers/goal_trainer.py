@@ -26,7 +26,8 @@ class GoalTrainer(BaseGoalTrainer):
                  goal_policy_holdout=None,
                  reward=None,
                  writer=None,
-                 optimizer=None):
+                 optimizer=None,
+                 sampler=None,):
         """
         Trainer for a goal_policy, if you want online env steps during training.
         NOTE: env will be reset when either env is terminated or goal_policy is terminated.
@@ -48,16 +49,44 @@ class GoalTrainer(BaseGoalTrainer):
         reward: A Reward object to compute rewards, None means use the environment reward.
         writer: A Writer object (or None, in which case we will create a Tensorboard writer)
         optimizer: Optimizer object to step the model.
+        sampler: Sampler or sampler params AttrDict(cls, ...) to use with the datasets.
         """
         self._datasets_train = datasets_train
         self._datasets_holdout = datasets_holdout
-
-        # samplers
-        self._dataset_samplers_train = [ds.sampler for ds in datasets_train]
-        self._dataset_samplers_holdout = [ds.sampler for ds in datasets_holdout]
+        
+        # get samplers
+        self._dataset_samplers_train = self._init_samplers(datasets_train, sampler, group_name='train')
+        self._dataset_samplers_holdout = self._init_samplers(datasets_holdout, sampler, group_name='holdout')
 
         super(GoalTrainer, self).__init__(params, file_manager, model, policy, goal_policy, env_train, env_holdout,
-                                          policy_holdout, goal_policy_holdout, reward=reward, optimizer=optimizer, writer=writer)
+                                          policy_holdout, goal_policy_holdout, reward=reward, optimizer=optimizer,
+                                          writer=writer)
+
+    @staticmethod
+    def _init_samplers(datasets, sampler, group_name='train'):
+        """ Initializing sampler for a group of datasets.
+
+        Either instantiate with given sampler class using all the datasets (if sampler specified)
+        or instantiate individually.
+
+        Parameters
+        ----------
+        datasets: List[Dataset]
+        sampler: Sampler
+        group_name: str
+
+        Returns
+        -------
+
+        """
+        samplers = []
+        for i, ds in enumerate(datasets):
+            if sampler is not None:
+                # first dataset will be the current one by default.
+                samplers.append(sampler.cls([ds] + datasets[:i] + datasets[i+1:], sampler))
+            else:
+                samplers.append(ds.get_sampler())
+        return samplers
 
     def _init_params_to_attrs(self, params):
         super(GoalTrainer, self)._init_params_to_attrs(params)
@@ -70,7 +99,8 @@ class GoalTrainer(BaseGoalTrainer):
         if isinstance(self.data_augmentation_params, DataAugmentation):
             self.data_augmentation: DataAugmentation = self.data_augmentation_params  # allow passing in data aug
         elif not self.data_augmentation_params.is_empty():
-            self.data_augmentation: DataAugmentation = get_cls_param_instance(self.data_augmentation_params, "cls", None, DataAugmentation)
+            self.data_augmentation: DataAugmentation = get_cls_param_instance(self.data_augmentation_params, "cls",
+                                                                              None, DataAugmentation)
             if len(self._datasets_train) == 1:
                 self.data_augmentation.link_dataset(self._datasets_train[0])
         else:
@@ -154,6 +184,22 @@ class GoalTrainer(BaseGoalTrainer):
         super(GoalTrainer, self)._write_step(model, loss, inputs, outputs, meta)
 
     def _train_step(self, model, dataset_idx):
+        """ Trains a model for a single iteration using the given dataset idx to select a dataset to sample from.
+
+        (1) gets a batch
+        (2) does any augmentation
+        (3) call loss + optimizer.step or call train_step
+        (4) write any additional values.
+
+        Parameters
+        ----------
+        model
+        dataset_idx
+
+        Returns
+        -------
+
+        """
         if len(self._datasets_train[dataset_idx]) == 0:
             logger.warn("Skipping training step since dataset is empty.")
             return
@@ -233,10 +279,10 @@ class GoalTrainer(BaseGoalTrainer):
 
     def _get_save_meta_data(self):
         return {
-             'train_step': self._current_train_step,
-             'holdout_step': self._current_holdout_step,
-             'train_loss': self._current_train_loss,
-             'holdout_loss': self._current_holdout_loss
+            'train_step': self._current_train_step,
+            'holdout_step': self._current_holdout_step,
+            'train_loss': self._current_train_loss,
+            'holdout_loss': self._current_holdout_loss
         }
 
     def _restore_meta_data(self, checkpoint):
@@ -367,7 +413,6 @@ class GoalTrainer(BaseGoalTrainer):
                 # also force a write step here
                 self._tracker_write_step(self._trackers < ["env_holdout"], self._current_env_holdout_step, force=True)
 
-
         return obs_train, goal_train, obs_holdout, goal_holdout
 
     def run(self, separate_eval=False):
@@ -441,7 +486,8 @@ class GoalTrainer(BaseGoalTrainer):
 
                             # also writing this only on saves.
                             if self._summary_writer is not None:
-                                self._summary_writer.add_scalar(f"{self._track_best_name}/{self._track_best_key}_BEST", self._last_best_tracked_val, self._current_step)
+                                self._summary_writer.add_scalar(f"{self._track_best_name}/{self._track_best_key}_BEST",
+                                                                self._last_best_tracked_val, self._current_step)
 
                         self._save(chkpt=is_next_cycle(self._current_step, self._save_checkpoint_every_n_steps),
                                    best=do_best)

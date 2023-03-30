@@ -8,6 +8,8 @@ class Field:
     Specify a value in a config that depends on other value(s), with some output type
 
     A field will be only changeable through changing another value (rigidly tied together)
+
+    TODO: If dtype is specified, and that type is in [float, str, int, bool], it will also support command line override.
     """
 
     def __init__(self, anchors: Union[str, List[str]], mod_fn=lambda *x: x[0]):

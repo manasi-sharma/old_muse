@@ -115,26 +115,30 @@ class BaseGCBC(GroupedModel):
         """
 
         inputs = inputs.leaf_copy()
+        outputs = d()
 
         with timeit("gcbc/encoders"):
             # call each encoder forward, and add to inputs
             for enc_name in self.state_encoder_order:
-                inputs.combine(self[enc_name](inputs, **self.get_kwargs(enc_name, kwargs)))
+                outputs[enc_name] = self[enc_name](inputs, **self.get_kwargs(enc_name, kwargs))
+                inputs.combine(outputs[enc_name])
 
         # get the goal and add it
         if self.use_goal:
             if select_goal:
-                inputs.combine(self.select_goals(inputs))
+                goals = self.select_goals(inputs) > self.goal_names
+                outputs.combine(goals)
+                inputs.combine(goals)
             else:
                 assert inputs.has_leaf_keys(self.goal_names), "Missing goal names from input!"
+                outputs.combine(inputs > self.goal_names)
 
         with timeit("gcbc/decoder"):
             # run the action decoder (support for nested kwargs)
-            outputs = d()
             outputs['action_decoder'] = self.action_decoder(inputs, **self.get_kwargs('action_decoder', kwargs))
             outputs.combine(outputs.action_decoder)
 
-        return inputs & outputs
+        return outputs
 
     @property
     def decoder(self):

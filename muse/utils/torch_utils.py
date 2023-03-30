@@ -243,8 +243,10 @@ def combine_after_dim(arr, start_dim, allow_no_dim=False):
         return combine_dims_np(arr, start_dim, max - start_dim)
 
 
-def combine_after_last_dim(inputs: AttrDict):
-    min_len = inputs.leaf_reduce(lambda red, val: min(red, len(val.shape) if is_array(val) else np.inf), seed=np.inf)
+def combine_after_last_dim(inputs: AttrDict, max_dim=np.inf):
+    assert max_dim > 0
+    # will be min(min(len(arr.shape) for all arrs), seed)
+    min_len = inputs.leaf_reduce(lambda red, val: min(red, len(val.shape) if is_array(val) else np.inf), seed=max_dim + 1)
     if 0 < min_len < np.inf:
         return inputs.leaf_apply(lambda arr: combine_after_dim(arr, int(min_len) - 1))
     else:

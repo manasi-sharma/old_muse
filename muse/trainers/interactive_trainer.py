@@ -32,8 +32,8 @@ class InteractiveGoalTrainer(BaseGoalTrainer):
         self._datasets = [self._online_dataset, self._offline_dataset]
 
         # samplers
-        self._offline_dataset_sampler = self._offline_dataset.sampler
-        self._online_dataset_sampler = self._online_dataset.sampler
+        self._offline_dataset_sampler = self._offline_dataset.get_sampler()
+        self._online_dataset_sampler = self._online_dataset.get_sampler()
 
         super(InteractiveGoalTrainer, self).__init__(params, file_manager, model, policy, goal_policy, env_train,
                                                      None, policy_holdout=None, goal_policy_holdout=None,  # no holdout

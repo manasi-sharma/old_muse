@@ -20,6 +20,11 @@ class GroupedModel(Model, Iterable):
         - log_metrics: things that get logged
     - parameter group access for combinations of model parameters specific to algorithm
 
+    Added (dynamic) params for each model
+    (1) {name}_no_grad: Sets requires_grad on the model to False (will not train)
+        Loss definition should also reference this to save computation time.
+    (2) {name}_file: Sets a file to load when restore is called
+
     """
 
     # model names that we require
@@ -237,7 +242,6 @@ class GroupedModel(Model, Iterable):
                 memory.count = 0
                 memory.increment_count_locally = True
 
-            # normal policy w/ fixed plan, we use prior, doesn't really matter here tho since run_plan=False
             out = model.forward(obs, goal, **inner_kwargs)
 
             if 'increment_count_locally' in memory and memory['increment_count_locally']:
