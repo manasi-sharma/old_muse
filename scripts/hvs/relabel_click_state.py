@@ -26,8 +26,9 @@ if __name__ == '__main__':
     parser.add_argument('--file', type=str, nargs="+", required=True, help="1 or more input files")
     parser.add_argument('--output_file', type=str, required=True)
     parser.add_argument('--load_file', type=str, default=None)
-    parser.add_argument('--image_key', type=str, required=True)  # ignore for now
-    parser.add_argument('--click_key', type=str, default='click_state')  # ignore for now
+    parser.add_argument('--image_key', type=str, required=True)
+    parser.add_argument('--click_key', type=str, default='click_state')
+    parser.add_argument('--add_click_to_input', action='store_true')
     parser.add_argument('--flip_imgs', action="store_true")
     parser.add_argument('--start_ep', type=int, default=0)  # which episode to start at
 
@@ -46,11 +47,16 @@ if __name__ == '__main__':
         file_manager = ExperimentFileManager('test', is_continue=True)
 
     exit_on_ctrl_c()
+    click_key = args.click_key
+
+    if args.add_click_to_input:
+        if click_key not in params.env_spec['action_names']:
+            logger.warn("Adding clicks to input spec!")
+            params.env_spec.action_names.extend([click_key])
+
     # if args.image_key not in params.env_spec.observation_names:
     #     params.env_spec.observation_names.append(args.image_key)
     env_spec = params.env_spec.cls(params.env_spec)
-
-    click_key = args.click_key
 
     # create dataset train (input)
     dataset_params = AttrDict(
