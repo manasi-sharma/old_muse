@@ -208,7 +208,6 @@ class BlockEnv3D(RobotBulletEnv):
             self.robot.create_controller(self.posture_qdot_controller_params["type"], "posture_qdot",
                                          self.posture_qdot_controller_params)
         else:
-            import pdb; pdb.set_trace()
             raise NotImplementedError
 
     def _load_assets(self, presets: d = d()):
@@ -922,7 +921,7 @@ class BlockEnv3D(RobotBulletEnv):
                 ('objects/aabb', (nb, 6), (0, np.inf), np.float32),
 
                 # TODO in a pre-defined box of allowed motion.
-                ('action', (7,), (-0.000001, 0.0000001), np.float32),
+                ('action', (7,), (-1, 1), np.float32),
                 ('target/ee_position', (3,), (-100, 100), np.float32),
                 ('target/ee_orientation_eul', (3,), (-2 * np.pi, 2 * np.pi), np.float32),
                 ('target/gripper_pos', (1,), (0, 255.), np.float32),
