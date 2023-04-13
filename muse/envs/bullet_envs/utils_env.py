@@ -31,7 +31,7 @@ def get_view(opt):
     width = 640
     height = 480
     # TODO: Use config
-    params_file = os.path.join(os.path.dirname(__file__), "sth_sth/simulation/params.npy")
+    params_file = os.path.join(os.path.dirname(__file__), "camera_views/params.npy")
     params = np.load(params_file)
     if opt.view_point == 'third':
         dist = params[5] + 0.3
