@@ -89,7 +89,7 @@ def rollout(local_args, local_policy, local_env, local_model, local_obs, local_g
 
 def parse_history(spec, local_obs_history, local_goal_history, local_ac_history):
     """
-    
+
     Parameters
     ----------
     spec
@@ -244,7 +244,12 @@ if __name__ == '__main__':
     env = params.env_train.cls(params.env_train, env_spec)
 
     # generate model and policy
-    model = params.model.cls(params.model, env_spec, None)
+    if params.model is not None:
+        model = params.model.cls(params.model, env_spec, None)
+        model.eval()
+    else:
+        #create dummy model
+        model = torch.empty([])
     policy = params.policy.cls(params.policy, env_spec, env=env)
 
     # generate dataset
@@ -263,8 +268,7 @@ if __name__ == '__main__':
     # restore model from file (if provided)
     if not args.no_model_file:
         model.restore_from_file(model_fname)
-
-    model.eval()
+        model.eval()
 
     logger.debug("Beginning Evaluation.")
 
