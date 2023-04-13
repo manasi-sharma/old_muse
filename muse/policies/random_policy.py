@@ -10,7 +10,6 @@ different policies for the same model.
 """
 from muse.policies.policy import Policy
 from attrdict.utils import get_with_default
-import torch
 
 class RandomPolicy(Policy):
 
@@ -33,4 +32,4 @@ class RandomPolicy(Policy):
         :return action: AttrDict (B x ...)
         """
         B = observation.get_one().shape[0]
-        return self._env_spec.get_uniform(self._action_names, B, torch_device=device)
+        return self._env_spec.get_uniform(self._action_names, B, torch_device=model.device)
