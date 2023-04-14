@@ -297,10 +297,6 @@ class TransformerActionDecoder(ActionDecoder):
         # todo add some more
         assert self.transformer_type in ['gpt'], f"Transformer type unimplemented: {self.transformer_type}"
 
-    @property
-    def online_input_names(self) -> List[str]:
-        return [] if self.vision_encoder_params.is_empty() else [self.encoder_out_name]
-
     def get_default_decoder_params(self) -> d:
         # transformer
         transformer_layer = LayerParams(self.transformer_type, config=self.cfg)
@@ -324,7 +320,7 @@ class TransformerActionDecoder(ActionDecoder):
     def init_memory(self, inputs: d, memory: d):
         super().init_memory(inputs, memory)
         # list of inputs, shape (B x 1 x ..), will be concatenated later
-        memory.input_history = [self.model.get_online_inputs(inputs) for _ in range(self.horizon)]
+        memory.input_history = [inputs > self.input_names for _ in range(self.horizon)]
 
         # avoid allocating memory again
         memory.alloc_inputs = d.leaf_combine_and_apply(memory.input_history,
@@ -334,8 +330,7 @@ class TransformerActionDecoder(ActionDecoder):
         inputs, kwargs = super().pre_update_memory(inputs, memory, kwargs)
 
         # add new inputs (the online ones), maintaining sequence length
-        memory.input_history = memory.input_history[1:] + [inputs > (self.state_names + self.goal_names +
-                                                                     self.online_input_names)]
+        memory.input_history = memory.input_history[1:] + [inputs > self.input_names]
 
         def set_vs(k, vs):
             # set allocated array, return None

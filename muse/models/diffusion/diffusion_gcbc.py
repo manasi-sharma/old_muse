@@ -24,6 +24,8 @@ class DiffusionConvActionDecoder(ActionDecoder):
     """
 
     predefined_arguments = ActionDecoder.predefined_arguments + [
+        Argument('horizon', type=int, required=True,
+                 help='the total prediction horizon (including obs and action steps)'),
         Argument('n_action_steps', type=int, required=True,
                  help='number of action steps in the future to predict (action horizon)'),
         Argument('n_obs_steps', type=int, required=True,
@@ -54,9 +56,10 @@ class DiffusionConvActionDecoder(ActionDecoder):
         )
 
         # default parameters for scheduler
-        import diffusers.schedulers.scheduling_ddpm as diff_sched
+        import diffusers.schedulers.scheduling_ddpm as ddpm_sched
+        # import diffusers.schedulers.scheduling_ddim as ddim_sched
         noise_scheduler = d(
-            cls=diff_sched.DDPMScheduler,
+            cls=ddpm_sched.DDPMScheduler,
             num_train_timesteps=100,
             beta_start=0.0001,
             beta_end=0.02,
@@ -65,9 +68,20 @@ class DiffusionConvActionDecoder(ActionDecoder):
             clip_sample=True,  # required when predict_epsilon=False
             prediction_type='epsilon',  # or sample
         )
+        # noise_scheduler = d(
+        #     cls=ddim_sched.DDIMScheduler,
+        #     num_train_timesteps=100,
+        #     beta_start=0.0001,
+        #     beta_end=0.02,
+        #     beta_schedule='squaredcos_cap_v2',
+        #     set_alpha_to_one=True,
+        #     clip_sample=True,  # required when predict_epsilon=False
+        #     prediction_type='epsilon',  # or sample
+        # )
 
         return base_prms & d(
             cls=DiffusionPolicyModel,
+            horizon=self.horizon,
             obs_inputs=self.input_names,
             action_dim=self.policy_raw_out_size,
             raw_out_name=self.policy_raw_out_name,
@@ -78,14 +92,10 @@ class DiffusionConvActionDecoder(ActionDecoder):
             obs_as_global_cond=True,
         )
 
-    @property
-    def online_input_names(self) -> List[str]:
-        return [] if self.vision_encoder_params.is_empty() else [self.encoder_out_name]
-
     def init_memory(self, inputs: d, memory: d):
         super().init_memory(inputs, memory)
         # list of inputs, shape (B x 1 x ..), will be concatenated later
-        memory.input_history = [(inputs > (self.state_names + self.goal_names + self.online_input_names))
+        memory.input_history = [(inputs > self.input_names)
                                 for _ in range(self.n_obs_steps)]
 
         # avoid allocating memory again
@@ -96,8 +106,7 @@ class DiffusionConvActionDecoder(ActionDecoder):
         inputs, kwargs = super().pre_update_memory(inputs, memory, kwargs)
 
         # add new inputs (the online ones), maintaining sequence length
-        memory.input_history = memory.input_history[1:] + [inputs > (self.state_names + self.goal_names +
-                                                                     self.online_input_names)]
+        memory.input_history = memory.input_history[1:] + [inputs > self.input_names]
 
         def set_vs(k, vs):
             # set allocated array, return None

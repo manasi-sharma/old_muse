@@ -35,6 +35,7 @@ export = d(
         action_names=['action'],
         use_policy_dist=False,
         use_tanh_out=True,
+        horizon=16,  # make sure this matches
         n_action_steps=8,
         n_obs_steps=2,
         decoder=d(

@@ -4,7 +4,7 @@ from attrdict.utils import get_with_default
 
 from muse.models.model import Model
 from muse.utils.abstract import Argument
-from muse.utils.general_utils import params_to_object
+from muse.utils.general_utils import params_to_object, timeit
 from muse.utils.param_utils import LayerParams
 from muse.utils.torch_utils import combine_then_concatenate
 
@@ -18,6 +18,8 @@ class DiffusionPolicyModel(Model):
     predefined_arguments = Model.predefined_arguments + [
         Argument('num_inference_steps', type=int, default=None),
 
+        Argument('horizon', type=int, required=True,
+                 help='the total prediction horizon (including obs and action steps)'),
         Argument('n_action_steps', type=int, required=True,
                  help='number of action steps in the future to predict (action horizon)'),
         Argument('n_obs_steps', type=int, required=True,
@@ -170,8 +172,9 @@ class DiffusionPolicyModel(Model):
         # how many steps to condition on
         To = self.n_obs_steps
         assert Do == self.obs_dim
-        T = obs.shape[1]
+        T = self.horizon
         Da = self.action_dim
+        assert To <= obs.shape[1], f"Obs does not have enough dimensions for conditioning: {obs.shape}"
 
         # build input
         device = self.device
@@ -204,9 +207,10 @@ class DiffusionPolicyModel(Model):
             # 1. apply conditioning
             noisy_trajectory[trajectory_cond_mask] = trajectory[trajectory_cond_mask]
 
-            # 2. compute previous image: x_t -> \hat{x}_t-1
-            recon_trajectory = self.generator(noisy_trajectory, timestep,
-                                              local_cond=local_cond, global_cond=global_cond)
+            with timeit('diffusion/single_step'):
+                # 2. compute previous image: x_t -> \hat{x}_t-1
+                recon_trajectory = self.generator(noisy_trajectory, timestep,
+                                                  local_cond=local_cond, global_cond=global_cond)
 
             result = AttrDict(
                 noise=noise,
@@ -221,11 +225,12 @@ class DiffusionPolicyModel(Model):
             """ conditional sampling process $(n_diffusion_step) diffusion steps"""
             assert raw_action is None, "Cannot pass in raw_action during diffusion sampling!"
             # run sampling
-            sample = self.conditional_sample(
-                cond_data,
-                cond_mask,
-                local_cond=local_cond,
-                global_cond=global_cond)
+            with timeit('diffusion/sampling'):
+                sample = self.conditional_sample(
+                    cond_data,
+                    cond_mask,
+                    local_cond=local_cond,
+                    global_cond=global_cond)
 
             action_pred = sample[..., :Da]
 

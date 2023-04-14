@@ -9,5 +9,12 @@ export = dc_skip_keys(bc_rnn.export, 'model') & d(
     horizon=16,
     model=dp_conv_1d.export & d(
         device=F('device'),
+        action_decoder=d(
+            horizon=F('horizon'),
+        )
     ),
+    trainer=d(
+        # since diffusion policy is so slow to run, decrease eval frequency
+        rollout_train_env_every_n_steps=40000,
+    )
 )
