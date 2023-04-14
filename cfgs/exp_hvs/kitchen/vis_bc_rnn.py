@@ -31,7 +31,6 @@ export = sq_bc_rnn.export.leaf_filter(lambda k, v: 'dataset' not in k) & d(
             image_shape=[128, 128, 3],
             img_embed_size=128,
         ),
-        device=F('device'),
     ),
 
     # sequential dataset modifications (adding input file)

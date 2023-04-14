@@ -264,3 +264,16 @@ def strlist(obj):
     for s in obj:
         assert isinstance(s, str), s
     return obj
+
+
+def params_to_object(params, *args):
+    return params.cls(*args, **params.leaf_filter(lambda k, v: k != 'cls').as_dict())
+
+
+def dc_skip_keys(dc: AttrDict, *keys):
+    dc_new = AttrDict()
+    for key in dc:
+        if key not in keys:
+            dc_new[key] = dc[key]
+
+    return dc_new

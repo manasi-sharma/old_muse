@@ -71,7 +71,9 @@ class GroupedModel(Model, Iterable):
                 assert isinstance(model, Model), f"{model_name} is {type(model)} but expected a subclass of Model"
 
             # assign them locally for parameter linking
-            setattr(self, model_name, model)
+            setattr(self, model_name, model.to(device=self.device))
+            print(model_name, model.device)
+
 
     def __getitem__(self, model_name: str):
         # nested lookup of grouped model

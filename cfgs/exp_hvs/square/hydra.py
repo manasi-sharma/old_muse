@@ -29,12 +29,14 @@ export = d(
     device="cuda",
     batch_size=256,
     horizon=10,
+    seed=0,
     dataset='mode_real2_v2_fast_human_square_30k_imgs',
-    exp_name='hvsBlock3D/velact_{?augment:aug_}b{batch_size}_h{horizon}_{dataset}',
+    exp_name='hvsBlock3D/velact_{?seed:s{seed}_}{?augment:aug_}b{batch_size}_h{horizon}_{dataset}',
     env_spec=env_spec,
     env_train=square.export,
     model=hydra.export & d(
         device=F('device'),
+        horizon=F('horizon'),
         use_smooth_mode=True,
     ),
     # sequential dataset modifications (adding input file)

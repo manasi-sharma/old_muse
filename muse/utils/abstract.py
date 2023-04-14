@@ -45,7 +45,7 @@ class Argument:
         self.default = default
 
     def set_default(self, value):
-        """ Sets the default value for the argument.
+        """ Sets the default value for the argument. Sets required=False
 
         Parameters
         ----------
@@ -75,6 +75,7 @@ class Argument:
             raise NotImplementedError(f'action default unimplemented: {self.action}')
 
         self.default = value
+        self.required = False
 
     def add_to_parser(self, parser, added_option_names=(), update_kwargs=None, prefix="") -> str:
         """ For configs to use, to automatically read arg """

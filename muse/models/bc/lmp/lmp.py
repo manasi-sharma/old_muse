@@ -27,6 +27,8 @@ class LMPBaseGCBC(BaseGCBC):
         Argument('beta_info', type=float, default=0.),
         Argument('plan_size', type=int, default=64),
 
+        Argument('replan_horizon', type=int, required=True),
+
         Argument('optimize_prior', action='store_true',
                  help='Use prior plan for policy during training'),
     ]
@@ -121,8 +123,6 @@ class LMPBaseGCBC(BaseGCBC):
                 run_posterior_decoder=False,
                 prior_plan=None,
                 posterior_plan=None,
-                prior_kwargs=None,
-                posterior_kwargs=None,
                 **kwargs):
         """ LMP call to forward()
 
@@ -149,10 +149,6 @@ class LMPBaseGCBC(BaseGCBC):
             if provided, prior will use this instead of calling the prior to compute the plan.
         posterior_plan: tensor or none
             if !run_posterior and run_posterior_policy, this plan is required for the posterior.
-        prior_kwargs: dict
-            kwargs to prior
-        posterior_kwargs: dict
-            kwargs to prior
         kwargs:
             decoder arguments.
 
@@ -177,9 +173,6 @@ class LMPBaseGCBC(BaseGCBC):
 
         outputs = d()
 
-        prior_kwargs = value_if_none(prior_kwargs, {})
-        posterior_kwargs = value_if_none(posterior_kwargs, {})
-
         if run_posterior_decoder:
             assert run_posterior ^ (posterior_plan is not None), \
                 "For run_posterior_decoder=True, either pass in a plan tensor or set run_posterior=True (not both)"
@@ -198,14 +191,14 @@ class LMPBaseGCBC(BaseGCBC):
 
         if prior_plan is None:
             with timeit("lmp/prior"):
-                outputs.prior = self.compute_plan_prior(inputs, **prior_kwargs)
+                outputs.prior = self.compute_plan_prior(inputs, **self.get_kwargs('prior', kwargs))
         else:
             outputs.prior = d.from_dict({self.plan_name: prior_plan})
 
         if run_posterior:
             # compute the posterior
             with timeit("lmp/posterior"):
-                outputs.posterior = self.compute_plan_posterior(inputs, **posterior_kwargs)
+                outputs.posterior = self.compute_plan_posterior(inputs, **self.get_kwargs('posterior', kwargs))
         elif posterior_plan is not None:
             # use an externally computed posterior plan.
             outputs.posterior = d.from_dict({self.plan_name: posterior_plan})
@@ -232,7 +225,8 @@ class LMPBaseGCBC(BaseGCBC):
 
             # actually run the decoder using samples
             with timeit(f"lmp/{sample_source}_decoder"):
-                outputs[sample_source + "_decoder"] = self.action_decoder(policy_inputs, **self.get_kwargs('action_decoder', kwargs))
+                outputs[sample_source + "_decoder"] = self.action_decoder(policy_inputs,
+                                                                          **self.get_kwargs('action_decoder', kwargs))
 
         # move the policy outputs (either posterior / prior) to action_decoder for optimization / forward to use
         if not run_posterior_decoder or self.optimize_prior:
@@ -246,6 +240,77 @@ class LMPBaseGCBC(BaseGCBC):
         outputs.combine(outputs.action_decoder)
 
         return inputs & outputs
+
+    def online_forward(self, inputs, memory: d = None, **kwargs):
+        """ Actions to run the model forward online, compatible with GCBCPolicy.
+
+        Runs encoders on the inputs, then runs prior, checks for goals, then runs online_forward on the action_decoder.
+
+        Parameters
+        ----------
+        inputs: AttrDict
+        memory: AttrDict
+        kwargs
+            prior_plan: if None, the prior will be queried.
+
+        Returns
+        -------
+        action: AttrDict
+
+        """
+
+        inputs = inputs.leaf_copy()
+        outputs = d()
+
+        if memory.is_empty():
+            self.init_memory(inputs, memory)
+
+        inputs, kwargs = self.pre_update_memory(inputs, memory, kwargs)
+
+        with timeit("lmp/encoders"):
+            # call each encoder forward, and add to inputs
+            for enc_name in self.state_encoder_order:
+                inputs.combine(self[enc_name](inputs))
+
+        # get the goal and add it (REQUIRED)
+        if self.use_goal:
+            assert inputs.has_leaf_keys(self.goal_names), f"Missing goal names {self.goal_names} from input!"
+
+        if 'prior_plan' not in kwargs or kwargs['prior_plan'] is None:
+            with timeit("lmp/prior"):
+                outputs.prior = self.compute_plan_prior(inputs, **self.get_kwargs('prior', kwargs))
+        else:
+            outputs.prior = d.from_dict({self.plan_name: kwargs['prior_plan']})
+
+        # prepare the plan
+        plan = outputs.prior[self.plan_name]
+        policy_inputs = inputs.leaf_copy()
+
+        # horizon is computed from any one of the inputs
+        horizon = inputs.get_one().shape[1]
+
+        # checking the plan shape
+        assert len(plan.shape) > 1, f"Plan from prior needs to be batched: {plan.shape}"
+        assert plan.shape[-1] == self.plan_size, plan.shape
+        if len(plan.shape) == 2:
+            plan = plan.unsqueeze(1)  # add in the horizon dim
+
+        policy_inputs[self.plan_name] = broadcast_dims(plan, dims=[-2], new_shape=[horizon])
+
+        with timeit("lmp/decoder"):
+            # run the action decoder online_forward with its memory (support for nested kwargs)
+            if 'prior_decoder' not in memory:
+                memory.prior_decoder = d()
+            outputs['prior_decoder'] = self.action_decoder.online_forward(policy_inputs, memory=memory.prior_decoder,
+                                                                          **self.get_kwargs('action_decoder', kwargs))
+            outputs['action_decoder'] = outputs.prior_decoder
+
+        # move action decoder outputs to top level
+        outputs.combine(outputs.action_decoder)
+
+        self.post_update_memory(inputs, outputs, memory)
+
+        return outputs
 
     def additional_loss(self, model_outputs, inputs, outputs, i=0, writer=None, writer_prefix="", **kwargs):
         """ Additional losses that operate on posterior/prior, for example.
@@ -365,43 +430,20 @@ class LMPBaseGCBC(BaseGCBC):
 
         return loss
 
-    def get_default_mem_policy_forward_fn(self, *args, replan_horizon=0, **kwargs):
-        """ Function that policy will use to run model forward (see GCBCPolicy)
+    def init_memory(self, inputs: d, memory: d):
+        super().init_memory(inputs, memory)
+        memory.plan = None
 
-        Keeps track of planning horizon.
+    def pre_update_memory(self, inputs: d, memory: d, kwargs: dict):
+        inputs, kwargs = super().pre_update_memory(inputs, memory, kwargs)
+        if is_next_cycle(memory.count, self.replan_horizon):
+            memory.plan = None
 
-        Parameters
-        ----------
-        args
-        replan_horizon: int
-            how often to replan (default is every step)
-        kwargs
+        # this will be filled in from previous step
+        kwargs['prior_plan'] = memory.plan
+        return inputs, kwargs
 
-        Returns
-        -------
-
-        """
-        if replan_horizon == 0:
-            logger.warn("LMP policy model forward, will replan every time step!")
-
-        fn = super().get_default_mem_policy_forward_fn(*args, **kwargs)
-
-        def inner_fn(model, obs, goal, memory, **inner_kwargs):
-            # fill in plan if it is present
-            # assumes "count" will be tracked and updated in "fn" above
-
-            if 'count' not in memory.keys() or is_next_cycle(memory.count, replan_horizon):
-                inner_kwargs['prior_plan'] = None
-            else:
-                # this will be filled in from previous step
-                inner_kwargs['prior_plan'] = memory.plan
-
-            # call parent fn (GCBC forward)
-            out = fn(model, obs, goal, memory, **inner_kwargs)
-
-            # put prior plan into memory for next time.
-            memory.plan = out.prior[self.plan_name]
-
-            return out
-
-        return inner_fn
+    def post_update_memory(self, inputs: d, outputs: d, memory: d):
+        super().post_update_memory(inputs, outputs, memory)
+        # put prior plan into memory for next time.
+        memory.plan = outputs.prior[self.plan_name]

@@ -14,6 +14,7 @@ export = d(
     normalize_states=False,
     save_action_normalization=False,
     use_policy_dist=False,
+    horizon=10,
 
     # names
     goal_names=['object'],
@@ -47,6 +48,7 @@ export = d(
         hidden_size=400,
         policy_size=0,
         rnn_depth=2,
+        flush_horizon=F('../horizon'),
     ),
     loss_fn=F('use_policy_dist',
               lambda x: get_default_nll_loss_fn(['action'], policy_out_norm_names=[], vel_act=True)

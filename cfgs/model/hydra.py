@@ -14,6 +14,7 @@ export = d(
 
     normalize_states=False,
     save_action_normalization=True,
+    horizon=10,
 
     # macros
     use_policy_dist=False,
@@ -89,5 +90,7 @@ export = d(
         sparse_mlp_size=F('../head_size'),
         decoder_inter_size=F('hidden_size'),
         rnn_depth=2,
+        mode_flush_horizon=F('../horizon'),
+        flush_horizon=F('../horizon'),
     ),
 )

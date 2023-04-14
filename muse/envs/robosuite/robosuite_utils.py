@@ -236,7 +236,7 @@ def modify_spec_prms(prms, no_names=False, raw=False, minimal=False, no_reward=F
         prms.action_names.append('click_state')
 
     if include_mode:
-        prms.observation_names.append('mode')
+        prms.action_names.append('mode')
 
         # change to support mode0 and mode1 actions (HYDRA)
         prms.cls = BiModalParamEnvSpec

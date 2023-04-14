@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+from muse.models.bc.gcbc import BaseGCBC
 from muse.policies.memory_policy import MemoryPolicy
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
@@ -15,10 +16,6 @@ class GCBCPolicy(MemoryPolicy):
         self.online_action_postproc_fn = params["online_action_postproc_fn"]
 
         self.velact = get_with_default(params, "velact", True)
-        self.recurrent = get_with_default(params, "recurrent", True)
-        self.sample_plan = get_with_default(params, "sample_plan", False)
-        self.replan_horizon = get_with_default(params, "replan_horizon", 0)
-        self.flush_horizon = get_with_default(params, "flush_horizon", self.replan_horizon)
         self.mode_key = params << "mode_key"
 
         self._policy_out_names = get_with_default(params, "policy_out_names", self._out_names)
@@ -60,18 +57,12 @@ class GCBCPolicy(MemoryPolicy):
     # policy first rolls out model, then postprocess action(s) as defined by utils
     def default_mem_policy_model_forward_fn(self, model, obs: d, goal: d, memory: d, **kwargs):
 
-        if self.model_forward_fn is None:
-            self.model_forward_fn = model.get_default_mem_policy_forward_fn(replan_horizon=self.replan_horizon,
-                                                                            policy_out_names=self._policy_out_names,
-                                                                            recurrent=self.recurrent,
-                                                                            sample_plan=self.sample_plan,
-                                                                            flush_horizon=self.flush_horizon)
-
         obs = obs.leaf_arrays().leaf_apply(lambda arr: arr.to(dtype=torch.float32))
         goal = goal.leaf_arrays().leaf_apply(lambda arr: arr.to(dtype=torch.float32))
 
         # model/rnn forward, root_model used for model.forward, decoder used for recurrent state tracking.
-        out = self.model_forward_fn(model, obs, goal, memory, **kwargs)
+        assert isinstance(model, BaseGCBC), "GCBC Policy requires a GCBC Model!"
+        out = model.online_forward(obs & goal, memory=memory, **kwargs)
 
         # optional mode switching between velocity & target/position action
         if self.mode_key is None:

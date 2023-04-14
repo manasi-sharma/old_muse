@@ -11,11 +11,12 @@ from muse.experiments import logger
 from muse.models.model import Model
 from muse.utils.loss_utils import write_avg_per_last_dim
 from muse.utils.general_utils import timeit
-from muse.utils.torch_utils import combine_then_concatenate, CAttrDict as cd, unsqueeze_n, concatenate, \
+from muse.utils.torch_utils import combine_then_concatenate, unsqueeze_n, concatenate, \
     combine_after_dim, torch_disable_grad
 
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
+
 
 # def get_loss_weights(action_weight, discount, weights_dict):
 #     '''
@@ -439,7 +440,8 @@ class DiffusionModel(Model):
 
                 if self.relative_to_h is not None:
                     if self.relative_to_h in [t for t, v in cond]:
-                        x_delta = [v[..., self.relative_slice_dim] for t, v in cond if t == self.relative_to_h][0]  # this is what we will rebase to.
+                        x_delta = [v[..., self.relative_slice_dim] for t, v in cond if t == self.relative_to_h][
+                            0]  # this is what we will rebase to.
                     else:
                         raise NotImplementedError("cannot sample relative inputs with h != conditional timesteps")
 
@@ -599,9 +601,9 @@ class DiffusionModel(Model):
 
             if ret_dict:
                 return d(loss=loss) & \
-                       (d(dynamics_loss=dynamics_train_loss, dynamics_penalty=dynamics_penalty,
-                          diffusion_loss=diff_loss)
-                        if model.dynamics_beta > 0 else d())
+                    (d(dynamics_loss=dynamics_train_loss, dynamics_penalty=dynamics_penalty,
+                       diffusion_loss=diff_loss)
+                     if model.dynamics_beta > 0 else d())
 
             return loss
 

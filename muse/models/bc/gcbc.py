@@ -3,12 +3,13 @@ from attrdict import AttrDict as d
 from muse.experiments import logger
 from muse.grouped_models.grouped_model import GroupedModel
 from muse.models.bc.action_decoders import ActionDecoder
+from muse.models.model_interfaces import OnlineModel
 from muse.utils.abstract import Argument
 from muse.utils.general_utils import timeit
 from muse.utils.torch_utils import broadcast_dims
 
 
-class BaseGCBC(GroupedModel):
+class BaseGCBC(GroupedModel, OnlineModel):
     """
     GCBC base class, which stitches following components:
 
@@ -22,6 +23,10 @@ class BaseGCBC(GroupedModel):
 
     Note that forward() does not unnormalize actions unless the decoder handles this.
     Usually the policy (e.g. GCBCPolicy) handles the unnormalizing
+
+    Important functions
+    - forward: calls the model (e.g. for training)
+    - online_forward: like forward, but used online and called sequentially, with some recurring memory.
 
     """
 
@@ -144,3 +149,53 @@ class BaseGCBC(GroupedModel):
     def decoder(self):
         # the actual decoder
         return self.action_decoder.decoder
+
+    """ OnlineModel methods """
+
+    def online_forward(self, inputs, memory: d = None, **kwargs):
+        """ Actions to run the model forward online, compatible with GCBCPolicy.
+
+        Runs encoders on the inputs, then checks for goals, then runs online_forward on the action_decoder.
+
+        Parameters
+        ----------
+        inputs: AttrDict
+        memory: AttrDict
+        kwargs
+
+        Returns
+        -------
+        action: AttrDict
+
+        """
+
+        inputs = inputs.leaf_copy()
+        outputs = d()
+
+        if memory.is_empty():
+            self.init_memory(inputs, memory)
+
+        inputs, kwargs = self.pre_update_memory(inputs, memory, kwargs)
+
+        with timeit("gcbc/encoders"):
+            # call each encoder forward, and add to inputs
+            for enc_name in self.state_encoder_order:
+                outputs[enc_name] = self[enc_name](inputs, **self.get_kwargs(enc_name, kwargs))
+                inputs.combine(outputs[enc_name])
+
+        # get the goal (REQUIRED ONLINE)
+        if self.use_goal:
+            assert inputs.has_leaf_keys(self.goal_names), "Missing goal names from input!"
+            outputs.combine(inputs > self.goal_names)
+
+        with timeit("gcbc/decoder"):
+            # run the action decoder online_forward with its memory (support for nested kwargs)
+            if 'action_decoder' not in memory:
+                memory.action_decoder = d()
+            outputs['action_decoder'] = self.action_decoder.online_forward(inputs, memory=memory.action_decoder,
+                                                                           **self.get_kwargs('action_decoder', kwargs))
+            outputs.combine(outputs.action_decoder)
+
+        self.post_update_memory(inputs, outputs, memory)
+
+        return outputs

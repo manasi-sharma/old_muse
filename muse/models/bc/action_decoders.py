@@ -8,18 +8,20 @@ from muse.experiments import logger
 from muse.grouped_models.grouped_model import GroupedModel
 from muse.models.basic_model import BasicModel
 from muse.models.gpt.bet_layers import TransformerConfig
+from muse.models.model_interfaces import OnlineModel
 from muse.models.rnn_model import RnnModel
 from muse.models.seq_model import SequenceModel
 from muse.utils.abstract import Argument
-from muse.utils.general_utils import timeit
+from muse.utils.general_utils import timeit, is_next_cycle
 from muse.utils.param_utils import get_dist_cap, LayerParams, SequentialParams, build_mlp_param_list, \
     get_dist_out_size
 from muse.utils.torch_utils import unsqueeze_then_gather
 
 
-class ActionDecoder(GroupedModel):
+class ActionDecoder(GroupedModel, OnlineModel):
     """
     Decodes input names into actions.
+    Subclasses might override online_forward() based on how that decoder uses memory.
     """
 
     required_models = ['decoder']
@@ -192,10 +194,17 @@ class RNNActionDecoder(ActionDecoder):
         Argument("policy_size", type=int, default=arg_hidden_size),
         Argument("rnn_depth", type=int, default=2),
         Argument("rnn_type", type=str, default="gru"),
+        Argument("flush_horizon", type=int, required=True),
     ]
 
     def _init_params_to_attrs(self, params):
         super()._init_params_to_attrs(params)
+        assert self.flush_horizon >= 0, "Flush horizon should be positive!"
+
+        if self.flush_horizon == 0:
+            logger.warn("Note: RNN will never flush the hidden state online (flush_horizon=0)! This can cause issues "
+                        "online.")
+
         assert self.rnn_type in ['lstm', 'gru'], f"RNN type unimplemented: {self.rnn_type}"
 
     def get_default_decoder_params(self) -> d:
@@ -225,8 +234,26 @@ class RNNActionDecoder(ActionDecoder):
             network=mlp_after_rnn_network,
         )
 
+    def init_memory(self, inputs: d, memory: d):
+        super().init_memory(inputs, memory)
+        memory.policy_rnn_h0 = None
 
-class TransformerGCBC(ActionDecoder):
+    def pre_update_memory(self, inputs: d, memory: d, kwargs):
+        inputs, kwargs = super().pre_update_memory(inputs, memory, kwargs)
+        if is_next_cycle(memory.count, self.flush_horizon):
+            memory.policy_rnn_h0 = None
+        # input to the decoder
+        if 'decoder_kwargs' not in kwargs:
+            kwargs['decoder_kwargs'] = dict()
+        kwargs['decoder_kwargs']['rnn_hidden_init'] = memory['policy_rnn_h0']
+        return inputs, kwargs
+
+    def post_update_memory(self, inputs: d, outputs: d, memory: d):
+        super().post_update_memory(inputs, outputs, memory)
+        memory['policy_rnn_h0'] = outputs[f'decoder/{self.decoder.hidden_name}']
+
+
+class TransformerActionDecoder(ActionDecoder):
     """
     Transformer ActionDecoder, with support for GPT-like arch
     """
@@ -239,12 +266,15 @@ class TransformerGCBC(ActionDecoder):
         Argument("n_head", type=int, default=16),
         Argument("n_layer", type=int, default=8),
         Argument("no_causal", action='store_true'),
+        Argument("horizon", type=int, required=True),
+        Argument("default_output_horizon_idx", type=int, default=-1),
     ]
 
     def _inner_model_params_to_attrs(self, params):
         super()._inner_model_params_to_attrs(params)
 
-        self.horizon = params["horizon"]
+        assert self.horizon > 0, "Online horizon should be positive!"
+
         # self._dropout_p = get_with_default(params, "dropout_p", 0)
 
         # accepts either a TransformerConfig, or individual params
@@ -288,6 +318,31 @@ class TransformerGCBC(ActionDecoder):
             model_output=self.policy_raw_out_name,
             horizon=self.horizon,
             # we will pass in the encoder out name online as an additional input to aggregate.
-            online_inputs=self.state_names + self.goal_names + self.online_input_names,
             network=transformer_net
         )
+
+    def init_memory(self, inputs: d, memory: d):
+        super().init_memory(inputs, memory)
+        # list of inputs, shape (B x 1 x ..), will be concatenated later
+        memory.input_history = [self.model.get_online_inputs(inputs) for _ in range(self.horizon)]
+
+        # avoid allocating memory again
+        memory.alloc_inputs = d.leaf_combine_and_apply(memory.input_history,
+                                                       lambda vs: torch.cat(vs, dim=1))
+
+    def pre_update_memory(self, inputs: d, memory: d, kwargs: dict):
+        inputs, kwargs = super().pre_update_memory(inputs, memory, kwargs)
+
+        # add new inputs (the online ones), maintaining sequence length
+        memory.input_history = memory.input_history[1:] + [inputs > (self.state_names + self.goal_names +
+                                                                     self.online_input_names)]
+
+        def set_vs(k, vs):
+            # set allocated array, return None
+            torch.cat(vs, dim=1, out=memory.alloc_inputs[k])
+
+        # assign to alloc_inputs
+        d.leaf_combine_and_apply(memory.input_history, set_vs, pass_in_key_to_func=True)
+
+        # replace inputs with the history.
+        return memory.alloc_inputs, kwargs

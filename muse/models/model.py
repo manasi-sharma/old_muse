@@ -332,6 +332,11 @@ class Model(torch.nn.Module, BaseClass):
 
     @property
     def device(self):
+        # compute the current device
+        try:
+            self._device = next(self.parameters()).device
+        except StopIteration:
+            pass
         return self._device
     
     @property

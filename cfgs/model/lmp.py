@@ -26,6 +26,7 @@ export = d(
     plan_size=64,
     hidden_size=400,
     beta=1e-4,
+    replan_horizon=10,
 
     # names
     goal_names=['goal/object'],
@@ -78,6 +79,7 @@ export = d(
         hidden_size=F('../hidden_size'),
         policy_size=0,
         rnn_depth=2,
+        flush_horizon=F('../replan_horizon')
     ),
     loss_fn=F('use_policy_dist',
               lambda x: get_default_nll_loss_fn(['action'], policy_out_norm_names=[], vel_act=True)

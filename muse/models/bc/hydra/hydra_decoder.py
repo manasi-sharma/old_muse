@@ -9,7 +9,7 @@ from muse.models.basic_model import BasicModel
 from muse.models.bc.action_decoders import ActionDecoder, RNNActionDecoder, MLPActionDecoder
 from muse.models.rnn_model import RnnModel
 from muse.utils.abstract import Argument, resolve_arguments
-from muse.utils.general_utils import timeit, value_if_none
+from muse.utils.general_utils import timeit, value_if_none, is_next_cycle
 import torch.nn.functional as F
 
 from muse.utils.param_utils import get_dist_cap, SequentialParams, build_mlp_param_list, get_dist_out_size, LayerParams
@@ -315,6 +315,7 @@ class HydraSparseMLPActionDecoder(HydraActionDecoder):
         Argument("sparse_mlp_size", type=int, default=128),
         Argument("sparse_mlp_depth", type=int, default=3),
         Argument("mp_rnn_type", type=str, default="gru"),
+        Argument("mode_flush_horizon", type=int, required=True),
     ]
 
     def get_default_sparse_decoder_params(self) -> d:
@@ -349,6 +350,27 @@ class HydraSparseMLPActionDecoder(HydraActionDecoder):
             dropout_p=0,
         )
 
+    def init_memory(self, inputs: d, memory: d):
+        super().init_memory(inputs, memory)
+        if self.use_mode_predictor:
+            memory.mode_policy_rnn_h0 = None
+
+    def pre_update_memory(self, inputs: d, memory: d, kwargs):
+        inputs, kwargs = super().pre_update_memory(inputs, memory, kwargs)
+        if self.use_mode_predictor:
+            if is_next_cycle(memory.count, self.mode_flush_horizon):
+                memory.mode_policy_rnn_h0 = None
+            # input to the decoder
+            if 'mode_predictor_kwargs' not in kwargs:
+                kwargs['mode_predictor_kwargs'] = dict()
+            kwargs['mode_predictor_kwargs']['rnn_hidden_init'] = memory['mode_policy_rnn_h0']
+        return inputs, kwargs
+
+    def post_update_memory(self, inputs: d, outputs: d, memory: d):
+        super().post_update_memory(inputs, outputs, memory)
+        if self.use_mode_predictor:
+            memory['mode_policy_rnn_h0'] = outputs[f'mode_predictor/{self.mode_predictor.hidden_name}']
+
 
 class HydraRNNActionDecoder(HydraSparseMLPActionDecoder, RNNActionDecoder):
     predefined_arguments = resolve_arguments(HydraSparseMLPActionDecoder, RNNActionDecoder)
@@ -357,6 +379,28 @@ class HydraRNNActionDecoder(HydraSparseMLPActionDecoder, RNNActionDecoder):
     def _init_params_to_attrs(self, params):
         super()._init_params_to_attrs(params)
         assert self.rnn_type in ['lstm', 'gru'], f"RNN type unimplemented: {self.rnn_type}"
+
+    # redefine rnn online forward since RNNActionDecoder is the second import
+    def init_memory(self, inputs: d, memory: d):
+        # super refers to HydraSparseMLPActionDecoder
+        super().init_memory(inputs, memory)
+        memory.policy_rnn_h0 = None
+
+    def pre_update_memory(self, inputs: d, memory: d, kwargs):
+        # super refers to HydraSparseMLPActionDecoder
+        inputs, kwargs = super().pre_update_memory(inputs, memory, kwargs)
+        if is_next_cycle(memory.count, self.flush_horizon):
+            memory.policy_rnn_h0 = None
+        # input to the decoder
+        if 'decoder_kwargs' not in kwargs:
+            kwargs['decoder_kwargs'] = dict()
+        kwargs['decoder_kwargs']['rnn_hidden_init'] = memory['policy_rnn_h0']
+        return inputs, kwargs
+
+    def post_update_memory(self, inputs: d, outputs: d, memory: d):
+        # super refers to HydraSparseMLPActionDecoder
+        super().post_update_memory(inputs, outputs, memory)
+        memory['policy_rnn_h0'] = outputs[f'decoder/{self.decoder.hidden_name}']
 
 
 class HydraMLPActionDecoder(HydraSparseMLPActionDecoder, MLPActionDecoder):

@@ -127,54 +127,6 @@ class BasicModel(Model):
                                          use_shared_params=self.use_shared_params,
                                          **kwargs)
 
-    @staticmethod
-    def get_default_mem_policy_forward_fn(*args, add_goals_in_hor=False, separate_fns=False, **kwargs):
-        """ Basic Model forward.
-
-        Parameters
-        ----------
-        args
-        add_goals_in_hor
-        separate_fns: Will return [pre_forward, post_forward, and (all together) forward_fn]
-        kwargs
-
-        Returns
-        -------
-        forward_fn or [pre_forward, post_forward, and (all together) forward_fn]
-
-        """
-
-        # any actions before forward (e.g. updating memory, updating inner_kwargs)
-        def pre_forward_fn(model: BasicModel, obs: AttrDict, goal: AttrDict, memory: AttrDict, **inner_kwargs):
-            obs = obs.leaf_copy()
-            if 'count' not in memory.keys():
-                memory.count = 0
-
-            if not add_goals_in_hor and not goal.is_empty():
-                obs.goal_states = goal
-
-            memory.count += 1
-            return obs, goal, memory, inner_kwargs
-
-        def post_forward_fn(model, out, obs, goal, memory):
-            return model.online_postproc_fn(model, out, obs, goal, memory)
-
-        # online execution using MemoryPolicy or subclass
-        def mem_policy_model_forward_fn(model: BasicModel, obs: AttrDict, goal: AttrDict, memory: AttrDict,
-                                        root_model: Model = None, **inner_kwargs):
-
-            obs, goal, memory, inner_kwargs = pre_forward_fn(model, obs, goal, memory, **inner_kwargs)
-
-            # normal policy w/ fixed plan, we use prior, doesn't really matter here tho since run_plan=False
-            base_model = (model if root_model is None else root_model)
-            out = base_model.forward(obs, **inner_kwargs)
-            return post_forward_fn(model, out, obs, goal, memory)
-
-        if separate_fns:
-            return pre_forward_fn, post_forward_fn, mem_policy_model_forward_fn
-        else:
-            return mem_policy_model_forward_fn
-
 
 class DefaultMLPModel(BasicModel):
     predefined_arguments = BasicModel.predefined_arguments + [

@@ -40,20 +40,14 @@ class HYDRAPolicy(GCBCPolicy):
             self.wp_dynamics_fn = params["wp_dynamics_fn"]
             self._sparse_policy_out_names = params["sparse_policy_out_names"]
 
-    def default_mem_policy_model_forward_fn(self, model, obs: d, goal: d, memory: d, known_sequence=None, **kwargs):
+    def default_mem_policy_model_forward_fn(self, model, obs: d, goal: d, memory: d, **kwargs):
         # set the forward fn from the model
-        if self.model_forward_fn is None:
-            self.model_forward_fn = model.get_default_mem_policy_forward_fn(self.replan_horizon,
-                                                                            self._policy_out_names,
-                                                                            recurrent=self.recurrent,
-                                                                            sample_plan=self.sample_plan,
-                                                                            flush_horizon=self.flush_horizon)
 
         obs = obs.leaf_arrays().leaf_apply(lambda arr: arr.to(dtype=torch.float32))
         goal = goal.leaf_arrays().leaf_apply(lambda arr: arr.to(dtype=torch.float32))
 
         # model/rnn forward
-        out = self.model_forward_fn(model, obs, goal, memory, known_sequence=known_sequence, **kwargs)
+        out = model.online_forward(obs & goal, memory, **kwargs)
 
         # controlling sparse / dense modes differently.
         wp_done = False

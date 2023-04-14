@@ -39,7 +39,12 @@ export = d(
     optimizer=d(
         cls=SingleOptimizer,
         max_grad_norm=None,
-        get_base_optimizer=lambda p: torch.optim.Adam(p, lr=1e-4, betas=(0.9, 0.999), weight_decay=0),
+        base_optimizer=d(
+            cls=torch.optim.Adam,
+            lr=1e-4,
+            betas=(0.9, 0.999),
+            weight_decay=0
+        ),
     ),
     trackers=reward_tracker.export,
     write_average_episode_returns_every_n_env_steps=0,

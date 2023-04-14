@@ -21,7 +21,10 @@ export = d(
     # utils=utils,
     env_spec=RobosuiteEnv.get_default_env_spec_params(square.export),
     env_train=square.export,
-    model=lmp.export & d(device=F('device')),
+    model=lmp.export & d(
+        device=F('device'),
+        replan_horizon=F('horizon'),
+    ),
 
     # sequential dataset modifications (adding input file)
     dataset_train=np_seq.export & d(
@@ -45,7 +48,6 @@ export = d(
         cls=GCBCPolicy,
         velact=True,
         recurrent=True,
-        replan_horizon=F('horizon'),
         policy_out_names=['action'],
         policy_out_norm_names=[],
         fill_extra_policy_names=True,

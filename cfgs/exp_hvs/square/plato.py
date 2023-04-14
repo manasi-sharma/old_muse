@@ -11,7 +11,10 @@ from muse.models.bc.lmp.play_helpers import get_parse_interaction_from_episode_f
 parse_fn = get_parse_interaction_from_episode_fn(rs_gripper_width_as_contact_fn, max_contact_len=0, bounds=True)
 
 export = lmp.export.leaf_filter(lambda k, v: 'dataset_' not in k) & d(
-    model=plato.export & d(device=F('device')),
+    model=plato.export & d(
+        device=F('device'),
+        horizon=F('horizon'),
+    ),
 
     # sequential dataset modifications (adding input file)
     dataset_train=np_interaction.export & d(

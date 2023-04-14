@@ -9,6 +9,8 @@ from muse.models.model import Model
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
 
+from muse.utils.general_utils import params_to_object
+
 
 class Optimizer(object):
     """
@@ -43,31 +45,44 @@ class Optimizer(object):
     def param_groups(self):
         raise NotImplementedError
 
+    def get_optim_parameters(self, **kwargs):
+        """ Get the parameters for the optimizer (kwargs will contain info to distinguish which optimizer)
+
+        Parameters
+        ----------
+        kwargs
+
+        Returns
+        -------
+        Iterable of parameters, or a dictionary of named parameters
+
+        """
+        return self._model.parameters()
+
 
 class SingleOptimizer(Optimizer):
     """
     The default single optimizer, which steps the model and defines a default scheduler
 
     params:
-        get_base_optimizer: Callable that returns the torch.Optimizer given model.parameters()
-        get_base_scheduler: [optional] Callable that returns the torch Scheduler given self._optimizer
-
+        base_optimizer: AttrDict that with cls(torch.Optimizer), which fills in model.parameters()
+        base_scheduler: [optional] AttrDict with cls(torch Scheduler), a param will be filled in for optimizer=<>
 
     """
 
     def _init_params_to_attrs(self, params: d):
         super(SingleOptimizer, self)._init_params_to_attrs(params)
-        self._get_base_optimizer = params["get_base_optimizer"]
-        if "get_base_scheduler" in params.leaf_keys():
+        self._base_optimizer_params = params["base_optimizer"]
+        if "base_scheduler" in params.leaf_keys():
             logger.debug("SingleOptimizer using scheduler..")
-            self._get_base_scheduler = params.get_base_scheduler
+            self._base_scheduler_params = params['base_scheduler']
         else:
-            self._get_base_scheduler = None
+            self._base_scheduler_params = None
 
     def _init_setup(self):
-        self._base_optimizer = self._get_base_optimizer(self._model.parameters())
-        if self._get_base_scheduler is not None:
-            self._base_scheduler = self._get_base_scheduler(self._base_optimizer)
+        self._base_optimizer = params_to_object(self._base_optimizer_params, self.get_optim_parameters())
+        if self._base_scheduler_params is not None:
+            self._base_scheduler = params_to_object(self._base_scheduler_params)
         else:
             self._base_scheduler = None
 

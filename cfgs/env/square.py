@@ -18,6 +18,6 @@ export = d(
     enable_preset_sweep=True,
     preset_sweep_pos=5,
     preset_sweep_ori=10,
-    pos_noise_std=0,
-    ori_noise_std=0,
+    pos_noise_std=0.,
+    ori_noise_std=0.,
 )
