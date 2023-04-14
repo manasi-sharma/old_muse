@@ -523,7 +523,11 @@ class BlockEnv3D(RobotBulletEnv):
                                             shadow=True,
                                             flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX if seg_flag else p.ER_NO_SEGMENTATION_MASK,
                                             renderer=p.ER_BULLET_HARDWARE_OPENGL)
-                obs.image = img_info[2][None, :, :, :3][..., ::-1]  # rgb image
+
+                #TODO: Check if it works
+                obs.image = np.array(img_info[2]).reshape(self.img_width, self.img_height, 4)
+                obs.image = obs.image[None,:,:,:3]
+                #obs.image = img_info[2][None, :, :, :3][..., ::-1]  # rgb image
 
             if seg_flag:
                 obs.seg = img_info[4][None]  # seg map
@@ -915,11 +919,10 @@ class BlockEnv3D(RobotBulletEnv):
                 ('objects/size', (nb, 3), (0, np.inf), np.float32),
                 ('objects/contact', (nb,), (False, True), bool),
                 ('objects/aabb', (nb, 6), (0, np.inf), np.float32),
-                ('wrist_ft', (6,), (-np.inf, np.inf), np.float32),
 
                 # TODO in a pre-defined box of allowed motion.
-                ('action', (7,), (-np.inf, np.inf), np.float32),
-                ('target/ee_position', (3,), (-np.inf, np.inf), np.float32),
+                ('action', (7,), (-1, 1), np.float32),
+                ('target/ee_position', (3,), (-100, 100), np.float32),
                 ('target/ee_orientation_eul', (3,), (-2 * np.pi, 2 * np.pi), np.float32),
                 ('target/gripper_pos', (1,), (0, 255.), np.float32),
 
@@ -932,18 +935,18 @@ class BlockEnv3D(RobotBulletEnv):
                 "wrist_ft", "ee_position", "ee_orientation_eul", "ee_velocity", "ee_angular_velocity",
                 "joint_positions", "gripper_pos", "gripper_tip_pos", "finger_left_contact", "finger_right_contact",
                 "objects/position", "objects/orientation_eul", "objects/velocity", "objects/angular_velocity",
-                "objects/aabb", "objects/contact"
+                "objects/aabb", "objects/contact",
             ],
             param_names=["objects/size"],
             final_names=[],
-            action_names=["action", "target/ee_position", "target/ee_orientation_eul", "target/gripper_pos", "policy_type",
-                          "policy_name", "policy_switch"],
+            action_names=["action", "target/ee_position", "target/ee_orientation_eul", "target/gripper_pos"],#"policy_type",
+                         # "policy_name", "policy_switch"],
             output_observation_names=[]
         )
         # if no_names:
         #     prms.action_names.remove('policy_name')
-        if imgs:
-            prms.observation_names.append(imgs)
+        #if imgs:
+        #    prms.observation_names.append(imgs)
         return prms
 
 

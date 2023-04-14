@@ -11,7 +11,6 @@ different policies for the same model.
 from muse.policies.policy import Policy
 from attrdict.utils import get_with_default
 
-
 class RandomPolicy(Policy):
 
     def _init_params_to_attrs(self, params):

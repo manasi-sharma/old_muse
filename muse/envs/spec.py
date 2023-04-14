@@ -263,4 +263,3 @@ class Spec:
             AttrDict
         """
         return self._names_to_dtypes
-

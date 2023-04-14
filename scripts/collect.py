@@ -89,7 +89,7 @@ def rollout(local_args, local_policy, local_env, local_model, local_obs, local_g
 
 def parse_history(spec, local_obs_history, local_goal_history, local_ac_history):
     """
-    
+
     Parameters
     ----------
     spec
