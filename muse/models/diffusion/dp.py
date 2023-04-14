@@ -21,7 +21,7 @@ class DiffusionPolicyModel(Model):
         Argument('horizon', type=int, required=True,
                  help='the total prediction horizon (including obs and action steps)'),
         Argument('n_action_steps', type=int, required=True,
-                 help='number of action steps in the future to predict (action horizon)'),
+                 help='number of action steps in the future to predict online (action horizon)'),
         Argument('n_obs_steps', type=int, required=True,
                  help='how many obs steps to condition on'),
 
@@ -235,9 +235,12 @@ class DiffusionPolicyModel(Model):
             action_pred = sample[..., :Da]
 
             # get actions for online execution
-            start = To
+            # e.g. for n_obs=2, n_ac = 3
+            # | o1 o2 ..... |
+            # | .. a2 a3 a4 |
+            start = To - 1
             if self.oa_step_convention:
-                start = To - 1
+                start = To
             end = start + self.n_action_steps
             action = action_pred[:, start:end]
 

@@ -9,6 +9,7 @@ export = d(
     imgs=False,
     ego_imgs=False,
     no_ori=False,
+    use_delta=True,
     onscreen_camera_name='agentview',
     offscreen_camera_name='agentview',
     render=False,

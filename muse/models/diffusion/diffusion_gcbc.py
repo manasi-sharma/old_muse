@@ -31,6 +31,9 @@ class DiffusionConvActionDecoder(ActionDecoder):
         Argument('n_obs_steps', type=int, required=True,
                  help='how many obs steps to condition on'),
 
+        Argument('use_ddim', action='store_true',
+                 help='Use DDIM as the default noise scheduler.')
+
     ]
 
     def _init_params_to_attrs(self, params: d):
@@ -55,30 +58,33 @@ class DiffusionConvActionDecoder(ActionDecoder):
             cond_predict_scale=True,
         )
 
-        # default parameters for scheduler
-        import diffusers.schedulers.scheduling_ddpm as ddpm_sched
-        # import diffusers.schedulers.scheduling_ddim as ddim_sched
-        noise_scheduler = d(
-            cls=ddpm_sched.DDPMScheduler,
-            num_train_timesteps=100,
-            beta_start=0.0001,
-            beta_end=0.02,
-            beta_schedule='squaredcos_cap_v2',
-            variance_type='fixed_small',  # Yilun's paper uses fixed_small_log instead, but easy to cause Nan
-            clip_sample=True,  # required when predict_epsilon=False
-            prediction_type='epsilon',  # or sample
-        )
-        # noise_scheduler = d(
-        #     cls=ddim_sched.DDIMScheduler,
-        #     num_train_timesteps=100,
-        #     beta_start=0.0001,
-        #     beta_end=0.02,
-        #     beta_schedule='squaredcos_cap_v2',
-        #     set_alpha_to_one=True,
-        #     clip_sample=True,  # required when predict_epsilon=False
-        #     prediction_type='epsilon',  # or sample
-        # )
+        if self.use_ddim:
+            import diffusers.schedulers.scheduling_ddim as ddim_sched
+            noise_scheduler = d(
+                cls=ddim_sched.DDIMScheduler,
+                num_train_timesteps=100,
+                beta_start=0.0001,
+                beta_end=0.02,
+                beta_schedule='squaredcos_cap_v2',
+                set_alpha_to_one=True,
+                clip_sample=True,  # required when predict_epsilon=False
+                prediction_type='epsilon',  # or sample
+            )
+        else:
+            # default parameters for scheduler
+            import diffusers.schedulers.scheduling_ddpm as ddpm_sched
+            noise_scheduler = d(
+                cls=ddpm_sched.DDPMScheduler,
+                num_train_timesteps=100,
+                beta_start=0.0001,
+                beta_end=0.02,
+                beta_schedule='squaredcos_cap_v2',
+                variance_type='fixed_small',  # Yilun's paper uses fixed_small_log instead, but easy to cause Nan
+                clip_sample=True,  # required when predict_epsilon=False
+                prediction_type='epsilon',  # or sample
+            )
 
+        # override num_inference_steps to reduce the number of inference steps.
         return base_prms & d(
             cls=DiffusionPolicyModel,
             horizon=self.horizon,
@@ -118,6 +124,27 @@ class DiffusionConvActionDecoder(ActionDecoder):
         # replace inputs with the history.
         return memory.alloc_inputs, kwargs
 
+    def online_forward(self, inputs: d, memory: d = None, **kwargs):
+        # same as parent, but enables action horizon
+        if memory.is_empty():
+            self.init_memory(inputs, memory)
+
+        inputs, kwargs = self.pre_update_memory(inputs, memory, kwargs)
+
+        curr_step = memory.count % self.n_action_steps
+
+        # compute actions once for n_action_steps
+        if curr_step == 0:
+            # save the outputs
+            memory.outputs = self(inputs, **kwargs) > self.action_names
+
+        # get the current outputs (saves computation)
+        out = memory.outputs.leaf_apply(lambda arr: arr[:, curr_step, None])
+
+        self.post_update_memory(inputs, out, memory)
+
+        return out
+
 
 class DiffusionGCBC(BaseGCBC):
     """
@@ -125,6 +152,10 @@ class DiffusionGCBC(BaseGCBC):
 
 
     """
+
+    predefined_arguments = BaseGCBC.predefined_arguments + [
+        Argument("normalize_actions", action="store_true"),
+    ]
 
     def loss(self, inputs, outputs, i=0, writer=None, writer_prefix="", training=True,
              ret_dict=False, meta=d(), **kwargs):
@@ -140,8 +171,13 @@ class DiffusionGCBC(BaseGCBC):
             (bsz,), device=self.device
         ).long()
         # also provide the raw actions.
+        action_dc = inputs > self.action_decoder.action_names
+        # do any normalization
+        if self.normalize_actions:
+            assert self.save_action_normalization, "Model must save action normalization to normalize actions in loss()!"
+            action_dc = self.normalize_by_statistics(action_dc, self.action_decoder.action_names)
         kwargs['action_decoder_kwargs']['decoder_kwargs']['raw_action'] = \
-            combine_then_concatenate(inputs, self.action_decoder.action_names, dim=2).to(dtype=torch.float32)
+            combine_then_concatenate(action_dc, self.action_decoder.action_names, dim=2).to(dtype=torch.float32)
 
         # model forward
         model_outputs = self(inputs, **kwargs)

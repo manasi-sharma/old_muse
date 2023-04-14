@@ -13,8 +13,4 @@ export = dc_skip_keys(bc_rnn.export, 'model') & d(
             horizon=F('horizon'),
         )
     ),
-    trainer=d(
-        # since diffusion policy is so slow to run, decrease eval frequency
-        rollout_train_env_every_n_steps=40000,
-    )
 )

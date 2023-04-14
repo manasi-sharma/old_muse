@@ -35,10 +35,11 @@ export = d(
         action_names=['action'],
         use_policy_dist=False,
         use_tanh_out=True,
-        horizon=16,  # make sure this matches
-        n_action_steps=8,
+        horizon=16,  # make sure this matches with dataset horizon.
+        n_action_steps=8,  # inference run every 8 steps.
         n_obs_steps=2,
         decoder=d(
+            num_inference_steps=None,  # sets to same # steps as during training
             generator=d(),  # override here to change generator beyond default
             noise_scheduler=d()  # override here to change noise scheduler beyond default
         )

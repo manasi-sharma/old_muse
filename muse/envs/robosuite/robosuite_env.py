@@ -43,6 +43,9 @@ class RobosuiteEnv(Env):
         self._no_ori = get_with_default(params, "no_ori", False)
         assert self._controller != "OSC_POSITION" or self._no_ori, "Cannot enable OSC POSITION control if using orientations"
 
+        # if false, action is [abs_pos, abs_axis_angle, grip]
+        self._use_delta = get_with_default(params, "use_delta", True)
+
         logger.debug(f"Env {self._env_name} using controller: {self._controller}")
 
         # rendering (onscreen and offscreen)
@@ -90,6 +93,8 @@ class RobosuiteEnv(Env):
                       'control_freq': self._control_freq, 'robots': self._robots, 'reward_shaping': False,
                       'controller_configs': load_controller_config(default_controller=self._controller)}
         env_kwargs['controller_configs']['damping'] = 1
+        env_kwargs['controller_configs']['control_delta'] = self._use_delta
+
         # logger.debug(f"Env config:\n{(json.dumps(env_kwargs, indent=4, sort_keys=True))}")
         if self._env_name == 'KitchenEnv':
             # loads the environments for zoo.
@@ -112,7 +117,7 @@ class RobosuiteEnv(Env):
         return presets
 
     def step(self, action):
-        # will be scaled -1 -> 1
+        # will be scaled -1 -> 1 if using delta
         base_action = to_numpy((action.action)[0], check=True)
         if self._pos_noise_std > 0:
             base_action = base_action.copy()
@@ -142,6 +147,7 @@ class RobosuiteEnv(Env):
         return self.get_obs(), self.get_goal(), np.array([self._done])
 
     def unscale_action(self, action, idx=0):
+        assert self._use_delta, "Action scaling only for delta environment!"
         # converts raw scaled action to unscaled action (input)
         c = self.rs_env.robots[idx].controller
         omx, omn = c.output_max, c.output_min  # unscaled
@@ -283,6 +289,7 @@ class RobosuiteEnv(Env):
         imgs = get_with_default(params, "imgs", False)
         ego_imgs = get_with_default(params, "ego_imgs", False)
 
+        use_delta = get_with_default(params, "use_delta", True)
         no_ori = get_with_default(params, "no_ori", False)
         parse_objects = get_with_default(params, "parse_objects", False)
 
@@ -309,6 +316,12 @@ class RobosuiteEnv(Env):
         else:
             raise NotImplementedError
 
+        pos_low = np.array([-10., -10., -10., -np.pi, -np.pi, -np.pi, -1])
+        pos_high = -pos_low
+        if no_ori:
+            pos_low = pos_low[[0, 1, 2, 6]]
+            pos_high = pos_high[[0, 1, 2, 6]]
+
         prms = d(
             cls=ParamEnvSpec,
             names_shapes_limits_dtypes=[
@@ -331,7 +344,7 @@ class RobosuiteEnv(Env):
                 ("robot0_joint_pos_sin", (7,), (-np.inf, np.inf), np.float32),
                 ("robot0_joint_vel", (7,), (-np.inf, np.inf), np.float32),
 
-                ('action', (4 if no_ori else 7,), (-1, 1.), np.float32),
+                ('action', (4 if no_ori else 7,), (-1, 1.) if use_delta else (pos_low, pos_high), np.float32),
                 ('reward', (1,), (-np.inf, np.inf), np.float32),
 
                 ("click_state", (1,), (0, 255), np.uint8),

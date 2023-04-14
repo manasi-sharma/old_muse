@@ -12,6 +12,7 @@ from einops.layers.torch import Rearrange
 
 from muse.experiments import logger
 from muse.models.diffusion.temporal_diffusion_layers import Downsample1d, Upsample1d, Conv1dBlock, SinusoidalPosEmb
+from muse.utils.general_utils import timeit
 
 
 class ConditionalResidualBlock1D(nn.Module):
@@ -195,12 +196,13 @@ class ConditionalUnet1D(nn.Module):
         # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
         timesteps = timesteps.expand(sample.shape[0])
 
-        global_feature = self.diffusion_step_encoder(timesteps)
+        with timeit('cond_unet/step_encoder'):
+            global_feature = self.diffusion_step_encoder(timesteps)
 
-        if global_cond is not None:
-            global_feature = torch.cat([
-                global_feature, global_cond
-            ], axis=-1)
+            if global_cond is not None:
+                global_feature = torch.cat([
+                    global_feature, global_cond
+                ], axis=-1)
 
         # encode local features
         h_local = list()
@@ -212,28 +214,33 @@ class ConditionalUnet1D(nn.Module):
             x = resnet2(local_cond, global_feature)
             h_local.append(x)
 
-        x = sample
-        h = []
-        for idx, (resnet, resnet2, downsample) in enumerate(self.down_modules):
-            x = resnet(x, global_feature)
-            if idx == 0 and len(h_local) > 0:
-                x = x + h_local[0]
-            x = resnet2(x, global_feature)
-            h.append(x)
-            x = downsample(x)
+        with timeit('cond_unet/down'):
+            x = sample
+            h = []
+            for idx, (resnet, resnet2, downsample) in enumerate(self.down_modules):
+                x = resnet(x, global_feature)
+                if idx == 0 and len(h_local) > 0:
+                    x = x + h_local[0]
+                x = resnet2(x, global_feature)
+                h.append(x)
+                x = downsample(x)
 
-        for mid_module in self.mid_modules:
-            x = mid_module(x, global_feature)
+        with timeit('cond_unet/mid'):
+            for mid_module in self.mid_modules:
+                x = mid_module(x, global_feature)
 
-        for idx, (resnet, resnet2, upsample) in enumerate(self.up_modules):
-            x = torch.cat((x, h.pop()), dim=1)
-            x = resnet(x, global_feature)
-            if idx == len(self.up_modules) and len(h_local) > 0:
-                x = x + h_local[1]
-            x = resnet2(x, global_feature)
-            x = upsample(x)
+        with timeit('cond_unet/up'):
+            for idx, (resnet, resnet2, upsample) in enumerate(self.up_modules):
+                x = torch.cat((x, h.pop()), dim=1)
+                x = resnet(x, global_feature)
+                if idx == len(self.up_modules) and len(h_local) > 0:
+                    x = x + h_local[1]
+                x = resnet2(x, global_feature)
+                x = upsample(x)
 
-        x = self.final_conv(x)
+        with timeit('cond_unet/post'):
+            x = self.final_conv(x)
 
-        x = einops.rearrange(x, 'b t h -> b h t')
+            x = einops.rearrange(x, 'b t h -> b h t')
+
         return x

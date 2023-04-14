@@ -12,8 +12,9 @@ from configs.helpers import get_script_parser, load_base_config
 from muse.experiments import logger
 from muse.experiments.file_manager import ExperimentFileManager
 from muse.utils.file_utils import file_path_with_default_dir
-from muse.utils.general_utils import exit_on_ctrl_c
+from muse.utils.general_utils import exit_on_ctrl_c, is_next_cycle
 from muse.utils.torch_utils import reduce_map_fn
+from muse.utils.general_utils import timeit
 
 exit_on_ctrl_c()
 
@@ -26,6 +27,7 @@ parser.add_argument('--no_model_file', action="store_true")
 parser.add_argument('--random_policy', action="store_true")
 parser.add_argument('--print_last_obs', action="store_true")
 parser.add_argument('--print_policy_name', action="store_true")
+parser.add_argument('--timeit_freq', type=int, default=0)
 parser.add_argument('--track_returns', action="store_true")
 parser.add_argument('--reduce_returns', type=str, default='sum', choices=list(reduce_map_fn.keys()),
                     help='If tracking returns, will apply this func to the returns before tracking..')
@@ -92,6 +94,7 @@ while True:
             break
         obs, goal = env.reset()
         policy.reset_policy(next_obs=obs, next_goal=goal)
+        timeit.reset()
 
     # empty axes for (batch_size, horizon)
     expanded_obs = obs.leaf_apply(lambda arr: arr[:, None])
@@ -109,6 +112,10 @@ while True:
     # step the environment with the policy action
     obs, goal, done = env.step(action)
     i += 1
+
+    if is_next_cycle(i, args.timeit_freq):
+        print(timeit)
+        timeit.reset()
 
     if args.track_returns:
         rew_list.append(obs.reward.item())
