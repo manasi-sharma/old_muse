@@ -20,6 +20,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_dataset_idx', type=int, default=-1)
     parser.add_argument('--run_async', action='store_true')
     parser.add_argument('--no_wandb', action='store_true')
+    parser.add_argument('--wandb_force_id', type=str, default=None)
     parser.add_argument('--wandb_project', type=str, default='muse')
     parser.add_argument('--wandb_tags', type=str, default=None,
                         help='tags as colon separated string, e.g. "muse:bc"')
@@ -90,7 +91,8 @@ if __name__ == '__main__':
         if tags is not None:
             tags = tags.split(':')
         writer = WandbWriter(exp_name,
-                             AttrDict(project_name=local_args.wandb_project, config=params.as_dict(), tags=tags),
+                             AttrDict(project_name=local_args.wandb_project, config=params.as_dict(), tags=tags,
+                                      force_id=local_args.wandb_force_id),
                              file_manager, resume=getattr(local_args, 'continue'))
 
     # trainer

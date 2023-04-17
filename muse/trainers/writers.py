@@ -12,8 +12,8 @@ class Writer(object):
     TODO
     """
 
-    def __init__(self, exp_name: object, params: object, file_manager: object,
-                 resume: object = False) -> object:
+    def __init__(self, exp_name: str, params: object, file_manager: object,
+                 resume: bool = False) -> object:
         self.exp_name = exp_name
         self.params = params.leaf_copy()
         self._file_manager = file_manager
@@ -84,14 +84,17 @@ class WandbWriter(Writer):
     def _init_params_to_attrs(self, params):
         super()._init_params_to_attrs(params)
         self.tags = params << "tags"
+        self.force_id = params << "force_id"
         if self.tags:
             assert isinstance(self.tags, List), f"Tags {self.tags} must be a list!"
             logger.debug(f'[wandb] Using tags: {self.tags}')
 
     def open(self):
         import wandb
+        import os
+        os.environ['WANDB__SERVICE_WAIT'] = "300"
         self.run = wandb.init(project=self.project_name, name=self.exp_name,
-                              config=self.config, resume=self.resume, tags=self.tags)
+                              config=self.config, resume=self.resume, tags=self.tags, id=self.force_id)
 
     def update_config(self, cfg_dict):
         self.run.config.update(cfg_dict)

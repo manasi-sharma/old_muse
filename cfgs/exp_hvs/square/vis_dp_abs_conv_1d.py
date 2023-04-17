@@ -2,17 +2,17 @@ import numpy as np
 from attrdict import AttrDict as d
 
 from cfgs.env import square
-from cfgs.exp_hvs.square import dp_conv_1d
+from cfgs.exp_hvs.square import vis_dp_conv_1d
 from configs.fields import Field as F
 from muse.envs.robosuite.robosuite_env import RobosuiteEnv
 
-export = dp_conv_1d.export & d(
+export = vis_dp_conv_1d.export & d(
     # this dataset has position actions relabeled..
-    dataset='human_square_abs_30k',
+    dataset='human_square_abs_30k_eimgs',
     exp_name='hvsBlock3D/posact_{?seed:s{seed}_}b{batch_size}_h{horizon}_{dataset}{?use_pose_norm:_pn}',
     # change in the env
-    env_spec=RobosuiteEnv.get_default_env_spec_params(square.export & d(use_delta=False)),
-    env_train=square.export & d(use_delta=False),
+    env_spec=RobosuiteEnv.get_default_env_spec_params(square.export & d(use_delta=False, imgs=True, ego_imgs=True)),
+    env_train=square.export & d(use_delta=False, imgs=True, ego_imgs=True),
     # stuff for normalization of actions, during training
 
     # True = use of fixed scale norms (1 for pos, 10 for ori, and 1 for gripper)
