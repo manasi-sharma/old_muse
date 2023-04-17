@@ -85,6 +85,12 @@ class Model(torch.nn.Module, BaseClass):
             # TODO if true, will normalize to be -1 to 1 with min and max in dataset.
             self.do_minmax_norm = params.get("do_minmax_norm", False)
 
+            # these are constant overrides to the statistics, in the form of:
+            # name:
+            #   mean: tensor
+            #   std: tensor
+            self.norm_overrides = get_with_default(params, "norm_overrides", AttrDict())
+
             if self.default_normalize_sigma != 1.:
                 logger.debug(f'Normalize sigma = {self.default_normalize_sigma}')
             if self.do_minmax_norm:
@@ -256,16 +262,24 @@ class Model(torch.nn.Module, BaseClass):
 
         assert "mean" in dd.keys() and "std" in dd.keys()
         for name in self.save_normalization_inputs:
-            self.torch_means[name].data.copy_(dd.mean >> name)
+            if name in self.norm_overrides:
+                logger.warn(f"Overriding {name} statistics with user-specified!")
+                dd.mean[name] = to_torch(self.norm_overrides[name].mean, device=self._device, check=True)
+                dd.std[name] = to_torch(self.norm_overrides[name].std, device=self._device, check=True)
             assert torch.all(dd.std[name] >= 0)
             if torch.any(dd.std[name] == 0):
                 logger.warn("Zero mean for key %s, shape %s. This could cause issues with normalization" % (
                 name, dd.std[name].shape))
             if name in self.max_std_normalization_inputs:
-                print(name, dd.std[name].shape)
-                self.torch_stds[name].data.copy_(torch.max(dd.std[name]))  # the MAXIMUM std for this name will be used
+                # the MAXIMUM std for this name will be used
+                std = torch.max(dd.std[name])
             else:
-                self.torch_stds[name].data.copy_(dd.std[name])  # there might be zero entries
+                # there might be zero entries
+                std = dd.std[name]
+
+            # copy over stats
+            self.torch_means[name].data.copy_(dd.mean[name])
+            self.torch_stds[name].data.copy_(std)
 
         for key in self.save_normalization_inputs:
             logger.debug("--> [%s] means: %s, Stds: %s" % (key, self.torch_means[key].data, self.torch_stds[key].data))

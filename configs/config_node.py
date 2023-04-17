@@ -189,8 +189,9 @@ class ConfigNode:
             self.subgroups[key] = GroupStruct(key, grp_source, grp_params, arg_strings=grp_arg_strings)
 
         # recursively instantiate and parse all subgroups
+        n = self.full_name
         for key in self.subgroups:
-            logger.debug(f"[{self.full_name}] Creating and loading group {key}.")
+            logger.debug(f"[{n if len(n) > 0 else 'root'}] Creating and loading group {key}.")
             gstruct = self.subgroups[key]
             self.subgroups[key] = self.subgroups[key].create(parent=self)
             # now load the subgroup with the command line strings
