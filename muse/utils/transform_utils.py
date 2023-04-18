@@ -232,8 +232,11 @@ quat2euler_intrinsic = lambda quat: T.quat_to_euler(quat[[3, 0, 1, 2]])
 euler2quat = lambda euler: R.from_euler("xyz", euler).as_quat()
 quat2euler = lambda quat: R.from_quat(quat).as_euler("xyz")
 
-mat2quat = lambda mat: T.mat_to_quat(mat)[[1,2,3,0]]
-quat2mat = lambda quat: T.quat_to_mat(quat[[3,0,1,2]])[:3, :3]
+# mat2quat = lambda mat: T.mat_to_quat(mat)[[1,2,3,0]]
+# quat2mat = lambda quat: T.quat_to_mat(quat[[3,0,1,2]])[:3, :3]
+
+mat2quat = lambda mat: R.from_matrix(mat).as_quat()
+quat2mat = lambda quat: R.from_quat(quat).as_matrix()
 
 
 def add_euler(delta, source, degrees=False):
@@ -278,20 +281,24 @@ def axisangle2quat(vec):
     Returns:
         np.array: (x,y,z,w) vec4 float angles
     """
+    front_shape = list(vec.shape[:-1])
+    vec = vec.reshape(-1, 3)
     # Grab angle
-    angle = np.linalg.norm(vec)
+    angle = np.linalg.norm(vec, axis=-1, keepdims=True)
 
-    # handle zero-rotation case
-    if np.isclose(angle, 0.):
-        return np.array([0., 0., 0., 1.])
+    q = np.zeros((vec.shape[0], 4))
+    zero_cond = np.isclose(angle, 0.)
 
     # make sure that axis is a unit vector
-    axis = vec / angle
+    axis = np.divide(vec, angle, out=vec.copy(), where=~zero_cond)
 
-    q = np.zeros(4)
-    q[3] = np.cos(angle / 2.)
-    q[:3] = axis * np.sin(angle / 2.)
-    return q
+    q[..., 3:] = np.cos(angle / 2.)
+    q[..., :3] = axis * np.sin(angle / 2.)
+
+    # handle zero-rotation case
+    q = np.where(zero_cond, np.array([0., 0., 0., 1.]), q)
+
+    return q.reshape(front_shape + [4])
 
 
 def quat2axisangle(quat):
@@ -304,18 +311,18 @@ def quat2axisangle(quat):
         np.array: (ax,ay,az) axis-angle exponential coordinates
     """
     # clip quaternion
-    if quat[3] > 1.:
-        quat[3] = 1.
-    elif quat[3] < -1.:
-        quat[3] = -1.
+    quat[..., 3] = np.where(quat[..., 3] > 1, 1., quat[..., 3])
+    quat[..., 3] = np.where(quat[..., 3] < -1, -1., quat[..., 3])
 
-    den = np.sqrt(1. - quat[3] * quat[3])
-    if np.isclose(den, 0.):
-        # This is (close to) a zero degree rotation, immediately return
-        return np.zeros(3)
+    den = np.sqrt(1. - quat[..., 3] * quat[..., 3])
+    zero_cond = np.isclose(den, 0.)
 
-    return (quat[:3] * 2. * math.acos(quat[3])) / den
+    scale = np.divide(1., den, out=np.zeros_like(den), where=~zero_cond)
 
+    return (quat[..., :3] * 2. * np.arccos(quat[..., 3])) * scale
+
+mat2axisangle = lambda mat: quat2axisangle(mat2quat(mat))
+axisangle2mat = lambda axa: quat2mat(axisangle2quat(axa))
 
 def quat_angle(q1, q0):
     scalar = 2 * (q0 * q1).sum(-1) ** 2
@@ -849,3 +856,47 @@ circ = [False] * 3 + [True] * 3
 def pose_difference_fn(pose1, pose2):
     return np.array(
         [circular_difference(pose1[i], pose2[i]) if circ[i] else pose1[i] - pose2[i] for i in range(len(pose1))])
+
+
+def rot6d2mat(d6: np.ndarray) -> np.ndarray:
+    """
+    Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
+    using Gram--Schmidt orthogonalization per Section B of [1].
+    Args:
+        d6: 6D rotation representation, of size (*, 6)
+
+    Returns:
+        batch of rotation matrices of size (*, 3, 3)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    Adapted from https://pytorch3d.readthedocs.io/en/latest/_modules/pytorch3d/transforms/rotation_conversions.html#matrix_to_rotation_6d
+    """
+    a1, a2 = d6[..., :3], d6[..., 3:]
+    b1 = a1 / np.linalg.norm(a1, axis=-1, keepdims=True)
+    b2 = a2 - (b1 * a2).sum(-1, keepdims=True) * b1
+    b2 = b2 / np.linalg.norm(b2, axis=-1, keepdims=True)
+    b3 = np.cross(b1, b2, axis=-1)
+    return np.stack((b1, b2, b3), axis=-2)
+
+
+def mat2rot6d(matrix: np.ndarray) -> np.ndarray:
+    """
+    Converts rotation matrices to 6D rotation representation by Zhou et al. [1]
+    by dropping the last row. Note that 6D representation is not unique.
+    Args:
+        matrix: batch of rotation matrices of size (*, 3, 3)
+
+    Returns:
+        6D rotation representation, of size (*, 6)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    Adapted from https://pytorch3d.readthedocs.io/en/latest/_modules/pytorch3d/transforms/rotation_conversions.html#matrix_to_rotation_6d
+    """
+    batch_dim = list(matrix.shape[:-2])
+    return matrix[..., :2, :].copy().reshape(batch_dim + [6])

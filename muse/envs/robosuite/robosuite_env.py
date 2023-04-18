@@ -14,6 +14,7 @@ from muse.utils import transform_utils
 from muse.utils.torch_utils import to_numpy
 from muse.utils.transform_utils import quat_multiply
 import robosuite.utils.transform_utils as T
+import muse.utils.transform_utils as Tm
 
 
 def postprocess_model_xml(xml_str):
@@ -89,6 +90,8 @@ class RobosuiteEnv(Env):
 
         # if false, action is [abs_pos, abs_axis_angle, grip]
         self._use_delta = get_with_default(params, "use_delta", True)
+        self._use_rot6d = get_with_default(params, "use_rot6d", False)
+        assert not self._use_rot6d or not self._use_delta, "cannot Use delta and use rot 6d representation!"
 
         logger.debug(f"Env {self._env_name} using controller: {self._controller}")
 
@@ -200,19 +203,36 @@ class RobosuiteEnv(Env):
     def step(self, action):
         # will be scaled -1 -> 1 if using delta
         base_action = to_numpy((action.action)[0], check=True)
+
+        if self._use_rot6d:
+            # position control w/ rot6d, set to axis angle
+            assert base_action.shape[-1] == 10
+            base_axis_angle = T.quat2axisangle(T.mat2quat(Tm.rot6d2mat(base_action[3:9])))
+            base_action = np.concatenate([base_action[:3], base_axis_angle, base_action[9:]])
+
+        # noising
         if self._pos_noise_std > 0:
             base_action = base_action.copy()
             base_action[:3] += self._pos_noise_std * np.random.randn(3)
         if self._ori_noise_std > 0:
             assert not self._no_ori, "Cannot add ori noise without ori action"
             base_action = base_action.copy()
-            base_action[3:6] += self._ori_noise_std * np.random.randn(3)
+            base_action[3:3:6] += self._ori_noise_std * np.random.randn(3)
+
+        # filling in orientation
         if self._no_ori:
             assert base_action.shape[-1] == 4, base_action.shape[-1]
             # fill in with zeros, to project up to dim = 7
+            if self._use_delta:
+                zero_rot = np.zeros_like(base_action[..., :3])
+            else:
+                zero_rot = self.zero_action[3:-1]
+                if self._use_rot6d:
+                    zero_rot = T.quat2axisangle(T.mat2quat(Tm.rot6d2mat(zero_rot)))
+
             if self.rs_env.action_dim == 7:
                 base_action = np.concatenate(
-                    [base_action[..., :3], np.zeros_like(base_action[..., :3]), base_action[..., -1:]], axis=-1)
+                    [base_action[..., :3], zero_rot, base_action[..., -1:]], axis=-1)
         self._action = base_action
 
         # STEP
@@ -512,11 +532,14 @@ class RobosuiteEnv(Env):
             return np.array([0.] * 6 + [-1.])
         else:
             robot = self._base_env.robots[0]
-            site_axis_angle = T.quat2axisangle(T.mat2quat(
-                robot.controller.sim.data.site_xmat[
-                    robot.controller.sim.model.site_name2id(robot.controller.eef_name)
-                ].reshape([3, 3])))
-            return np.concatenate([self._obs['robot0_eef_pos'], site_axis_angle, [0]])
+            site_mat = robot.controller.sim.data.site_xmat[
+                robot.controller.sim.model.site_name2id(robot.controller.eef_name)
+            ].reshape([3, 3])
+            if self._use_rot6d:
+                site_rot = Tm.mat2rot6d(site_mat)
+            else:
+                site_rot = T.quat2axisangle(T.mat2quat(site_mat))
+            return np.concatenate([self._obs['robot0_eef_pos'], site_rot, [0]])
 
     default_params = d(
         onscreen_camera_name='agentview',
@@ -533,6 +556,7 @@ class RobosuiteEnv(Env):
         ego_imgs = get_with_default(params, "ego_imgs", False)
 
         use_delta = get_with_default(params, "use_delta", True)
+        use_rot6d = get_with_default(params, "use_rot6d", False)
         no_ori = get_with_default(params, "no_ori", False)
         parse_objects = get_with_default(params, "parse_objects", False)
 
@@ -559,11 +583,18 @@ class RobosuiteEnv(Env):
         else:
             raise NotImplementedError
 
-        pos_low = np.array([-10., -10., -10., -np.pi, -np.pi, -np.pi, -1])
-        pos_high = -pos_low
+        rot_max = np.pi
+        rot_dim = 3
         if no_ori:
-            pos_low = pos_low[[0, 1, 2, 6]]
-            pos_high = pos_high[[0, 1, 2, 6]]
+            rot_dim = 0
+        elif use_rot6d:
+            rot_max = 1.
+            rot_dim = 6
+
+        pos_low = np.array([-10., -10., -10.])
+        rot_low = -rot_max * np.ones(rot_dim)
+        abs_low = np.concatenate([pos_low, rot_low, [-1]])
+        abs_high = -abs_low
 
         prms = d(
             cls=ParamEnvSpec,
@@ -587,7 +618,7 @@ class RobosuiteEnv(Env):
                 ("robot0_joint_pos_sin", (7,), (-np.inf, np.inf), np.float32),
                 ("robot0_joint_vel", (7,), (-np.inf, np.inf), np.float32),
 
-                ('action', (4 if no_ori else 7,), (-1, 1.) if use_delta else (pos_low, pos_high), np.float32),
+                ('action', (4 + rot_dim,), (-1, 1.) if use_delta else (abs_low, abs_high), np.float32),
                 ('reward', (1,), (-np.inf, np.inf), np.float32),
 
                 ("click_state", (1,), (0, 255), np.uint8),
@@ -771,6 +802,7 @@ if __name__ == '__main__':
         render=True,
         enable_preset_sweep=False,
         use_delta=False,
+        use_rot6d=False,
     )
 
     # square example (2 * 8)
@@ -801,7 +833,7 @@ if __name__ == '__main__':
             ac = ac.astype(np.float32)[None]
 
         for i in range(100):
-            action = d(action=ac + np.array([0., 0, amp * np.sin(i * 2 * np.pi / 50), 0., 0., 0., 0.]))
+            action = d(action=ac + np.array([0., 0, amp * np.sin(i * 2 * np.pi / 50)] + [0] * (ac.shape[-1] - 3)))
             obs, goal, done = env.step(action)
 
     logger.debug("Done.")
