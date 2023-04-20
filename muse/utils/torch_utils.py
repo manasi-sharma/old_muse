@@ -6,7 +6,7 @@ import torch
 import torch.distributions as D
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List, Optional, Mapping, Union
+from typing import List, Optional, Mapping, Union, Callable
 
 from muse.utils.general_utils import is_array
 from attrdict import AttrDict
@@ -52,6 +52,7 @@ class ShapedModule(object):
 
     def output_shape(self, input_shape: torch.Size) -> torch.Size:
         return input_shape
+
 
 ############################
 # Array shape modification #
@@ -246,7 +247,8 @@ def combine_after_dim(arr, start_dim, allow_no_dim=False):
 def combine_after_last_dim(inputs: AttrDict, max_dim=np.inf):
     assert max_dim > 0
     # will be min(min(len(arr.shape) for all arrs), seed)
-    min_len = inputs.leaf_reduce(lambda red, val: min(red, len(val.shape) if is_array(val) else np.inf), seed=max_dim + 1)
+    min_len = inputs.leaf_reduce(lambda red, val: min(red, len(val.shape) if is_array(val) else np.inf),
+                                 seed=max_dim + 1)
     if 0 < min_len < np.inf:
         return inputs.leaf_apply(lambda arr: combine_after_dim(arr, int(min_len) - 1))
     else:
@@ -445,6 +447,7 @@ def numel(arr: Union[np.ndarray, torch.Tensor]):
     elif is_array(arr):
         return arr.numel()
 
+
 ## others
 
 
@@ -549,11 +552,13 @@ class CAttrDict(AttrDict):
 
 def get_augment_fn(std):
     std_arr = to_torch(np.asarray(std)[None], device="cpu")
+
     def fn(arr, **kwargs):
         nonlocal std_arr
         if std_arr.device != arr.device:
             std_arr = std_arr.to(device=arr.device)
         return arr + std_arr * torch.randn_like(arr)
+
     return fn
 
 
@@ -565,6 +570,7 @@ def get_masked_augment_fn(std, mask_key='mask', prefix='read_inputs', corr=False
             return arr + mask * std * torch.randn_like(arr[:, :1])
         else:
             return arr + mask * std * torch.randn_like(arr)
+
     return fn
 
 
@@ -921,6 +927,41 @@ class BranchedModules(nn.ModuleDict):
             return torch.cat(all_ls, dim=self._cat_dim)
 
         return all_ls
+
+
+def replace_submodules(
+        root_module: nn.Module,
+        predicate: Callable[[nn.Module], bool],
+        func: Callable[[nn.Module], nn.Module]) -> nn.Module:
+    """
+    predicate: Return true if the module is to be replaced.
+    func: Return new module to use.
+    """
+    if predicate(root_module):
+        return func(root_module)
+
+    bn_list = [k.split('.') for k, m
+               in root_module.named_modules(remove_duplicate=True)
+               if predicate(m)]
+    for *parent, k in bn_list:
+        parent_module = root_module
+        if len(parent) > 0:
+            parent_module = root_module.get_submodule('.'.join(parent))
+        if isinstance(parent_module, nn.Sequential):
+            src_module = parent_module[int(k)]
+        else:
+            src_module = getattr(parent_module, k)
+        tgt_module = func(src_module)
+        if isinstance(parent_module, nn.Sequential):
+            parent_module[int(k)] = tgt_module
+        else:
+            setattr(parent_module, k, tgt_module)
+    # verify that all BN are replaced
+    bn_list = [k.split('.') for k, m
+               in root_module.named_modules(remove_duplicate=True)
+               if predicate(m)]
+    assert len(bn_list) == 0
+    return root_module
 
 
 if __name__ == '__main__':

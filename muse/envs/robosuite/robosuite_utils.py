@@ -135,7 +135,11 @@ def rs_generic_online_action_postproc_fn(model, obs, out, policy_out_names, no_o
 
     if vel_act:
         ac = to_numpy(unnorm_out["action"], check=True)
-        assert ac.shape[-1] == (4 if no_ori else 7), ac.shape
+        if no_ori:
+            assert ac.shape[-1] == 4, ac.shape
+        else:
+            # supports rot6d
+            assert ac.shape[-1] in [7, 10], ac.shape
     else:
         if unnorm_out.has_leaf_key('target/gripper'):
             base_gripper = to_numpy(unnorm_out['target/gripper'], check=True)

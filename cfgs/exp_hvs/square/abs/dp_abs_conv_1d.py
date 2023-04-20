@@ -23,6 +23,9 @@ export = dp_conv_1d.export & d(
                          if pn else d())),
         normalize_actions=True,
         save_action_normalization=True,
+        action_decoder=d(
+            use_tanh_out=False,  # actions are not -1 to 1
+        ),
     ),
     # policy also needs to normalize actions, during inference
     policy=d(

@@ -1,7 +1,7 @@
 from attrdict import AttrDict as d
 
 from cfgs.env import square
-from cfgs.exp_hvs.square import bc_abs_rnn
+from cfgs.exp_hvs.square.abs import bc_abs_rnn
 from muse.envs.robosuite.robosuite_env import RobosuiteEnv
 
 export = bc_abs_rnn.export & d(

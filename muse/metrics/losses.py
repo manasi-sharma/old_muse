@@ -3,7 +3,7 @@ import torch
 from muse.metrics.metric import Metric, ElementwiseMetric, MultiTaskMetric, maximum, minimum
 from muse.utils.general_utils import get_from_ls
 
-from attrdict import AttrDict
+from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
 
 
@@ -37,7 +37,7 @@ class SingleTensorLoss(Loss):
     def __init__(self, params):
         super().__init__(params)
 
-        self.pred_key = get_required(params, "pred_key")
+        self.pred_key = params["pred_key"]
         self.true_key = get_with_default(params, "true_key", self.pred_key)
 
         self.true_key_source = get_from_ls(params, "true_key_source", ["inputs", "outputs"], default_idx=1, map_fn=lambda x: str(x).lower())
