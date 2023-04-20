@@ -12,7 +12,7 @@ from muse.models.model import Model
 from muse.utils.loss_utils import write_avg_per_last_dim
 from muse.utils.general_utils import timeit
 from muse.utils.torch_utils import combine_then_concatenate, unsqueeze_n, concatenate, \
-    combine_after_dim, torch_disable_grad
+    combine_after_dim, torch_disable_grad, CAttrDict as cd
 
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default

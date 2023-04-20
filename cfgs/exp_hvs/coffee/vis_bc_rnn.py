@@ -24,6 +24,10 @@ export = d(
     env_train=polymetis_panda.export,
     model=vis_bc_rnn.export & d(
         state_names=['ee_position', 'ee_orientation', 'gripper_pos'],
+        vision_encoder=d(
+            image_shape=[320, 240, 3],
+            img_embed_size=128,
+        ),
         device=F('device'),
     ),
 
