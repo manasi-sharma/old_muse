@@ -1,12 +1,18 @@
+import sys
+
 import numpy as np
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
+from scipy.spatial.transform import Rotation
 
+from muse.envs.bullet_envs.block3d.block_env_3d import BlockEnv3D
 from muse.envs.bullet_envs.robot_bullet_env import RobotBulletEnv
+from muse.envs.env import make
 from muse.policies.policy import Policy
+from muse.policies.scripted.robosuite_policies import get_min_yaw
 from muse.policies.waypoint import Waypoint
 from muse.utils import transform_utils as T
-from muse.utils.np_utils import clip_norm, clip_scale
+from muse.utils.np_utils import clip_norm
 from muse.utils.torch_utils import to_numpy
 
 
@@ -116,3 +122,96 @@ class WaypointPolicy(Policy):
 
     def is_terminated(self, model, observation, goal, **kwargs) -> bool:
         return self._done
+
+
+def get_lift_block_policy_params(obs, goal, env=None, random_motion=True):
+    keys = ['ee_position', 'ee_orientation', 'ee_orientation_eul', 'gripper_pos', 'objects']
+    # index out batch and horizon
+    pos, _, grq, od = (obs > keys).leaf_apply(lambda arr: to_numpy(arr[0], check=True)).get_keys_required(keys)
+
+    base_ori = np.array([-np.pi, 0, 0])
+    base_offset = np.array([0.06, 0., 0.])
+    obj_q = od["orientation"][0]
+    offset = Rotation.from_quat(obj_q).apply(base_offset)
+
+    obj_yaw = T.quat2euler(obj_q)[2]
+    yaw = (obj_yaw + np.pi) % (2 * np.pi) - np.pi
+    # minimum yaw
+    yaw = get_min_yaw(yaw)
+
+    desired_obj_yaws = np.array([np.pi / 2, 3 * np.pi / 2])  # np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
+    desired_yaws = np.array([get_min_yaw(y) for y in desired_obj_yaws])
+    delta = (desired_yaws - yaw) % (2 * np.pi)  # put delta in 0->360
+    delta = np.minimum(delta, 2 * np.pi - delta)  # put delta in 0 -> 180 (circular difference)
+    which_idx = np.argmin(delta)
+    desired_yaw = desired_yaws[which_idx]  # the one that requires the least rotation
+
+    # delta = (desired_obj_yaws - obj_yaw) % (2 * np.pi)  # put delta in 0->360
+    # delta = np.minimum(delta, 2*np.pi - delta)  # put delta in 0 -> 180 (circular difference)
+    # desired_obj_yaw = desired_obj_yaws[np.argmin(delta)]  # the one that requires the least rotation
+    # desired_yaw = (desired_obj_yaw + np.pi) % (2 * np.pi) - np.pi
+    # desired_yaw = get_min_yaw(desired_yaw)
+
+    # print(np.rad2deg(obj_yaw), np.rad2deg(yaw))
+    ori = (Rotation.from_euler("xyz", base_ori) * Rotation.from_euler("z", -yaw)).as_euler("xyz")
+    ori_goal = (Rotation.from_euler("xyz", base_ori) * Rotation.from_euler("z", -desired_yaw)).as_euler("xyz")
+
+    # open
+    above = Waypoint(np.concatenate([offset + np.array([0., 0., 0.05]), ori]), -1, timeout=20 * 6,
+                     relative_to_parent=False,
+                     relative_to_object=0,
+                     relative_ori=False)
+
+    down = Waypoint(np.concatenate([offset, ori]), -1, timeout=20 * 1.5,
+                    relative_to_parent=False,
+                    relative_to_object=0,
+                    relative_ori=False)
+
+    grasp = Waypoint(np.concatenate([offset, ori]), 1, timeout=20 * 1,
+                     relative_to_parent=False,
+                     relative_to_object=0,
+                     relative_ori=False, check_reach=False)
+
+    up_pos = np.array([0., 0., 0.15])
+    if random_motion:
+        up_pos[:2] += np.random.uniform(-0.04, 0.04, 2)
+    up_rot = Waypoint(np.concatenate([up_pos, ori_goal]), 1, timeout=20 * 3,
+                      relative_to_parent=True,
+                      relative_to_object=0,
+                      relative_ori=False, )
+
+    return d(name='lift', pose_waypoints=[above, down, grasp, up_rot])
+
+
+# teleop code as a test
+if __name__ == '__main__':
+    # parser = argparse.ArgumentParser()
+    # args = parser.parse_args()
+    import multiprocessing as mp
+
+    if sys.platform != "linux":
+        mp.set_start_method('spawn')  # macos thing i think
+
+    max_steps = 1000
+
+    params = d(
+        render=True,
+        debug_cam_dist=0.35,
+        debug_cam_p=-45,
+        debug_cam_y=0,
+        debug_cam_target_pos=[0.4, 0, 0.45],
+    )
+
+    env = make(BlockEnv3D, params)
+    policy = WaypointPolicy(d(), env.env_spec, env=env)
+
+    obs, goal = env.reset()
+
+    policy_params = get_lift_block_policy_params(obs, goal, env)
+
+    policy.reset_policy(**policy_params.as_dict())
+
+    done = [False]
+    while not done[0] and not policy.is_terminated(None, obs, goal):
+        action = policy.get_action(None, obs, goal)
+        obs, goal, done = env.step(action)
