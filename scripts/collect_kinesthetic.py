@@ -225,7 +225,7 @@ if __name__ == '__main__':
         # TODO add demo file as as input to reset policy here.
         policy.reset_policy(next_obs=obs, next_goal=goal)
 
-        obs_history, goal_history, ac_history = rollout(args, policy, env, model, obs, goal)
+        obs_history, goal_history, ac_history, _ = rollout(args, policy, env, model, obs, goal)
 
         step += len(obs_history) - 1
         ep += 1

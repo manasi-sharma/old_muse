@@ -174,7 +174,7 @@ if __name__ == '__main__':
 
         logger.info(f"[{step}] Running episode {ep}...")
         populate_display("'r' to reset and 'q' to quit")
-        obs_history, goal_history, ac_history = rollout(args, policy, env, model, obs, goal,
+        obs_history, goal_history, ac_history, _ = rollout(args, policy, env, model, obs, goal,
                                                         early_terminate_fn=early_terminate_fn)
 
         # UI reset fn with the extra reset function that will ask if we should save or not

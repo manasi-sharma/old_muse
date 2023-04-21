@@ -81,8 +81,9 @@ class RobotBulletEnv(Env, VRInterface):
                                              p.GUI if (self.compute_images or self.compute_ego_images) and "DISPLAY" in os.environ.keys() else p.DIRECT)
 
 
+        # env_reward_fn(curr_obs, goal, action, next_obs=next_obs, done=done, env=self) -> reward
         self.env_reward_fn = get_with_default(params, "env_reward_fn", None)  # computes reward, optional
-        self._env_reward_requires_env = get_with_default(params, "env_reward_requires_env", False)  # pass in env
+        self._env_reward_requires_env = get_with_default(params, "env_reward_requires_env", True)  # pass in env
 
         # if self.compute_images and self._render:
         #     self._init_figure()
@@ -172,11 +173,12 @@ class RobotBulletEnv(Env, VRInterface):
 
     def _get_reward(self, curr_obs, next_obs, goal, action, done):
         if self.env_reward_fn is None:
-            return np.zeros((1, 1))
-        if self._env_reward_requires_env:
-            return self.env_reward_fn(curr_obs, goal, action, next_obs=next_obs, done=done, env=self)
+            rew = self.is_success()
+        elif self._env_reward_requires_env:
+            rew = self.env_reward_fn(curr_obs, goal, action, next_obs=next_obs, done=done, env=self)
         else:
-            return self.env_reward_fn(curr_obs, goal, action, next_obs=next_obs, done=done)
+            rew = self.env_reward_fn(curr_obs, goal, action, next_obs=next_obs, done=done)
+        return np.array([[float(rew)]])
 
     def _get_images(self, **kwargs):
         raise NotImplementedError

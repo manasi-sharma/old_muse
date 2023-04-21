@@ -12,15 +12,33 @@ from muse.policies.policy import Policy
 from attrdict import AttrDict
 from attrdict.utils import get_with_default
 
+
 class MetaPolicy(Policy):
+    """ An aggregate of multiple policies
+
+    Params:
+        num_policies: int
+        policy_{i}: either an AttrDict or an instantiated policy
+        next_param_fn: get next policy idx, and next params for reset_policy() (return a Tuple[int, AttrDict])
+        ...
+    """
 
     def _init_params_to_attrs(self, params):
         # lower level policy params
-        self._all_policies = list(params["all_policies"])
+        self._num_policies = params['num_policies']
+        # if specified, this is the max number of policies to use before resetting.
+        self._max_policies_per_reset = get_with_default(params, "max_policies_per_reset", np.inf)
         self._max_steps_per_policy = get_with_default(params, "max_steps_per_policy", None)
 
+        assert self._num_policies > 0
+
+        # populates this using params
+        self._all_policies = []
+
         logger.debug("Using policies:")
-        for i, pol in enumerate(self._all_policies):
+        for i in range(self._num_policies):
+            pol = params[f'policy_{i}']
+            self._all_policies.append(pol)
             if isinstance(pol, AttrDict):
                 pr = pol.pprint(str_max_len=50, ret_string=True)
             else:
@@ -29,15 +47,14 @@ class MetaPolicy(Policy):
 
         # returns policy idx and params to reset with
         self._next_param_fn = get_with_default(params, "next_param_fn",
-                                               lambda idx, *args, **kwargs: ((idx + 1) % len(self._all_policies),
+                                               lambda idx, *args, **kwargs: ((idx + 1) % self._num_policies,
                                                                              AttrDict()))
-
-        assert len(self._all_policies) > 0
 
         self._curr_policy_idx = None
         self._last_action = None
         self._curr_policy = None
         self._curr_policy_step = 0
+        self._num_policy_resets = 0
 
         self._policy_done = False
         self._memory = AttrDict()
@@ -48,7 +65,7 @@ class MetaPolicy(Policy):
         for i, p in enumerate(self._all_policies):
             # create or load policies
             if isinstance(p, AttrDict):
-                self._all_policies[i] = p.cls(p.params, self._env_spec, self._file_manager, env=self._env)
+                self._all_policies[i] = p.cls(p, self._env_spec, self._file_manager, env=self._env)
             assert isinstance(self._all_policies[i], Policy), type(self._all_policies[i])
 
     def warm_start(self, model, observation, goal):
@@ -81,6 +98,7 @@ class MetaPolicy(Policy):
         """
         # assert self._curr_policy is not None, "Must instantiate a base-policy before calling get action"
         self._curr_policy_step += 1
+        self._num_policy_resets += 1
 
         policy_switch = False  # true when a new policy is loaded
         if self._curr_policy is None or self.is_curr_policy_terminated(model, observation, goal, **kwargs):
@@ -89,7 +107,7 @@ class MetaPolicy(Policy):
                 logger.debug("Moving to next policy..")
             self._curr_policy_idx, self._curr_policy, presets = self.get_next_policy(self._curr_policy_idx, model, observation, goal, **kwargs)
 
-            if self._curr_policy_idx is None:
+            if self._curr_policy_idx is None or self._num_policy_resets > self._max_policies_per_reset:
                 self._policy_done = True
                 self._curr_policy = None
                 # if self._curr_policy is None:  # edge case where there was no previous policy, default to 0th
@@ -128,6 +146,7 @@ class MetaPolicy(Policy):
         self._curr_policy_idx = None
         self._curr_policy = None
         self._last_action = None
+        self._num_policy_resets = 0
 
         self._policy_done = False
         self._memory.clear()

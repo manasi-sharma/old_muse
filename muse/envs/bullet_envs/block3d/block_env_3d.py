@@ -563,8 +563,8 @@ class BlockEnv3D(RobotBulletEnv):
                 [self._get_object_obs(obj).leaf_apply(lambda arr: arr[:, None]) for obj in self.objects],
                 lambda vs: np.concatenate(vs, axis=1))
 
-        return obs.leaf_filter_keys(
-            self.env_spec.observation_names + self.env_spec.output_observation_names + self.env_spec.param_names + self.env_spec.final_names)
+        return obs.leaf_filter_keys(self.env_spec.all_names)
+
 
     def _step_simulation(self):
         super(BlockEnv3D, self)._step_simulation()
@@ -954,6 +954,8 @@ class BlockEnv3D(RobotBulletEnv):
                 ('target/ee_orientation_eul', (3,), (-2 * np.pi, 2 * np.pi), np.float32),
                 ('target/gripper_pos', (1,), (0, 255.), np.float32),
 
+                ('reward', (1,), (0, np.inf), np.float32),
+
                 ("policy_type", (1,), (0, 255), np.uint8),
                 ("policy_name", (1,), (0, 1), object),
                 ("policy_switch", (1,), (False, True), bool),  # marks the beginning of a policy
@@ -963,7 +965,7 @@ class BlockEnv3D(RobotBulletEnv):
                 "wrist_ft", "ee_position", "ee_orientation_eul", "ee_velocity", "ee_angular_velocity",
                 "joint_positions", "gripper_pos", "gripper_tip_pos", "finger_left_contact", "finger_right_contact",
                 "objects/position", "objects/orientation_eul", "objects/velocity", "objects/angular_velocity",
-                "objects/aabb", "objects/contact",
+                "objects/aabb", "objects/contact", 'reward',
             ],
             param_names=["objects/size"],
             final_names=[],
