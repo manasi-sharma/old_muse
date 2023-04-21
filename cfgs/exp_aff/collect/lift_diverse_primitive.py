@@ -1,5 +1,6 @@
 from attrdict import AttrDict as d
 
+from configs.fields import GroupField
 from muse.envs.bullet_envs.block3d.block_env_3d import BlockEnv3D
 from cfgs.env import block3d
 from muse.envs.bullet_envs.block3d.reward_fns import get_lift_reward
@@ -15,7 +16,7 @@ env_extra = d(
 export = d(
     exp_name='affordance/collect',
     cls=BlockEnv3D,
-    env_spec=BlockEnv3D.get_default_env_spec_params(block3d.export & env_extra),
+    env_spec=GroupField('env_train', BlockEnv3D.get_default_env_spec_params),
     env_train=block3d.export & env_extra,
 
     policy=d(

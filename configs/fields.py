@@ -58,10 +58,10 @@ class Field:
                 # put params in global params temporarily for lookup
                 gparams[path] = params
 
-                if anchor in gparams.leaf_keys():
+                if anchor in gparams.node_leaf_keys():
                     # look with a relative (local) path first
                     anchor_value = gparams[anchor]
-                elif anchor_path in gparams.leaf_keys():
+                elif anchor_path in gparams.node_leaf_keys():
                     # look with an absolute path next
                     anchor_value = gparams[anchor_path]
                 else:
@@ -74,3 +74,9 @@ class Field:
         # mod on the list of values
         return self.mod_fn(*anchor_values)
 
+
+class GroupField(Field):
+    """
+    These fields depend on sub-groups, so they get handled in post_process_params() in the config node.
+    """
+    pass

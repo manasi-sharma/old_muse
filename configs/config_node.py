@@ -7,7 +7,7 @@ from typing import Tuple, Callable
 
 from attrdict import AttrDict as d
 from configs import utils as cu
-from configs.fields import Field
+from configs.fields import Field, GroupField
 from configs.macro_parser import MacroEnabledArgumentParser
 from muse.experiments import logger
 
@@ -127,10 +127,33 @@ class ConfigNode:
         # go through and process all the fields with the command line updated values at this level (and global)
         local_params, _ = cu.filter_local_and_group_params(out_d)
         for key, item in local_params.leaf_items():
-            if isinstance(item, Field):
+            if isinstance(item, Field) and not isinstance(item, GroupField):
                 out_d[key] = item.process(key, local_params, global_params, path=self.full_name)
 
         return out_d
+
+    def post_process_params(self, params: d, subgroups: d, global_params=None):
+        """ Do any actions that happen after fully loading each sub group.
+
+        It is not recommended to override this function.
+
+        Parameters
+        ----------
+        params
+        subgroups
+        global_params
+
+        Returns
+        -------
+
+        """
+        # process any remaining GroupFields
+        new_params = params.leaf_copy()
+        local_params, _ = cu.filter_local_and_group_params(new_params)
+        for key, item in params.leaf_items():
+            if isinstance(item, GroupField):
+                new_params[key] = item.process(key, local_params, global_params, path=self.full_name)
+        return new_params
 
     def load_subgroups(self, node_params, subgroups, cmd_group_args) -> Tuple[d, d]:
         """ Process all subgroup specs with optional command line overrides, calls load on the subgroups after creating them.
@@ -255,6 +278,7 @@ class ConfigNode:
         if self.parent and self.parent.is_loaded:
             global_params = self.global_params
 
+        # these params are processed first (before loading subgroups)
         self.params = self.process_params(namespace, self.params, global_params=global_params)
 
         # set the local exp name if it was provided, and remove it from local_params
@@ -271,6 +295,9 @@ class ConfigNode:
 
         # load the subgroup structures into params.
         self.params, self.subgroups = self.load_subgroups(self.params, subgroups, cmd_group_args)
+
+        # change the local params *after* loading subgroups (not recommended to change this fn)
+        self.params = self.post_process_params(self.params, self.subgroups, global_params=self.global_params)
 
         if do_help:
             # after loading things, we can print a more useful "help" message
