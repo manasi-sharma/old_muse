@@ -7,8 +7,8 @@ export = BlockEnv3D.default_params & d(
     cls=BlockEnv3D,
     num_blocks=1,
     do_random_ee_position=False,
-    img_width=256,
-    img_height=256,
+    img_width=128,
+    img_height=128,
     render=True,
     compute_images=F('render'),
 )

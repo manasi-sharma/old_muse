@@ -90,8 +90,8 @@ class WaypointPolicy(Policy):
         # dori = np.zeros(3)  #orientation_error(T.euler2mat(wp_pose[3:]), T.euler2mat(ori))
 
         # account for tip in ee frame (right now assumes that orientations are the same for tip and ee)
-        tip_in_ee = env.tip_in_ee_frame
-        ee_frame = env.robot.get_end_effector_frame()
+        tip_in_ee = self._env.tip_in_ee_frame
+        ee_frame = self._env.robot.get_end_effector_frame()
         tip_frame = CoordinateFrame(ee_frame, tip_in_ee.rot.inv(), tip_in_ee.pos)
         desired_tip_pose = np.concatenate([pos + dpos, T.quat2euler(goal_q)])
         desired_pose = world_frame_3D.pose_apply_a_to_b(desired_tip_pose, tip_frame, ee_frame)
@@ -99,18 +99,18 @@ class WaypointPolicy(Policy):
         goal_gr = wp_grip
 
         new_gr = gr[0] + np.clip(goal_gr - gr[0], -self._max_gr_vel * self._env.dt, self._max_gr_vel * self._env.dt)
-        if wp.grasping and obs.has_leaf_key('finger_left_contact'):
+        if wp.grasping and observation.has_leaf_key('finger_left_contact'):
             # stop if both fingers are in contact
-            if obs.finger_left_contact.item() and obs.finger_right_contact.item():
+            if observation.finger_left_contact.item() and observation.finger_right_contact.item():
                 new_gr = gr[0]
 
         self._curr_step += 1
 
         return d(
             target=d(
-                position=wp_pose[:3],
-                orientation_eul=wp_pose[3:],
-                gripper=np.array([wp_grip]),
+                ee_position=wp_pose[:3],
+                ee_orientation_eul=wp_pose[3:],
+                gripper_pos=np.array([wp_grip]),
             ),
             # absolute position action
             action=np.concatenate([desired_pose, [new_gr]]),
@@ -140,9 +140,25 @@ class WaypointPolicy(Policy):
 
 
 def get_lift_block_policy_params(obs, goal, env=None, random_motion=False, random_ee_ori=False, random_ee_offset=False):
+    """
+    Inputs should be passed in B x H
+
+    Parameters
+    ----------
+    obs
+    goal
+    env
+    random_motion
+    random_ee_ori
+    random_ee_offset
+
+    Returns
+    -------
+
+    """
     keys = ['gripper_tip_pos', 'ee_orientation_eul', 'gripper_pos', 'objects']
     # index out batch and horizon
-    pos, _, grq, od = (obs > keys).leaf_apply(lambda arr: to_numpy(arr[0], check=True)).get_keys_required(keys)
+    pos, _, grq, od = (obs > keys).leaf_apply(lambda arr: to_numpy(arr[0, 0], check=True)).get_keys_required(keys)
 
     base_ori = np.array([-np.pi, 0, -np.pi/2])
 
@@ -247,7 +263,7 @@ if __name__ == '__main__':
     for ep in range(5):
         obs, goal = env.reset()
 
-        policy_params = get_lift_block_policy_params(obs, goal, env, random_ee_ori=True)
+        policy_params = get_lift_block_policy_params(dc_add_horizon_dim(obs), dc_add_horizon_dim(goal), env=env, random_ee_ori=True)
 
         policy.reset_policy(**policy_params.as_dict())
 

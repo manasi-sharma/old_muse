@@ -36,11 +36,11 @@ def rollout(local_args, local_policy, local_env, local_model, local_obs, local_g
     obs_history: List[AttrDict], length H+1
     goal_history: List[AttrDict], length H+1
     ac_history: List[AttrDict], length H
+    returns: Optional[float]
 
     """
     done = [False]
     reward_reduce = reduce_map_fn[local_args.reduce_returns]
-    returns = 0.
     i = 0
 
     local_obs_history = []
@@ -73,18 +73,16 @@ def rollout(local_args, local_policy, local_env, local_model, local_obs, local_g
         if local_policy.is_terminated(local_model, local_obs, local_goal):
             done[0] = True
 
-        if local_args.track_returns:
-            rew = reward_reduce(local_obs.reward).item()
-            returns += rew
-
     # append the last observation/goal
     local_obs_history.append(local_obs)
     local_goal_history.append(local_goal)
 
+    returns = 0.
     if local_args.track_returns:
+        returns = reward_reduce(np.concatenate([o.reward for o in local_obs_history], axis=0)).item()
         logger.info(f'Returns: {returns}')
 
-    return local_obs_history, local_goal_history, local_ac_history
+    return local_obs_history, local_goal_history, local_ac_history, returns
 
 
 def parse_history(spec, local_obs_history, local_goal_history, local_ac_history):
@@ -109,10 +107,10 @@ def parse_history(spec, local_obs_history, local_goal_history, local_ac_history)
     raw_out_goal_names = [(og[5:] if og.startswith('next/') else og) for og in spec.output_goal_names]
 
     # concatenate into one big episode
-    obs = d.leaf_combine_and_apply([(o > spec.observation_names) for o in local_obs_history[:-1]], np.concatenate)
+    obs = d.leaf_combine_and_apply([(o > (spec.observation_names + spec.param_names)) for o in local_obs_history[:-1]], np.concatenate)
     goals = d.leaf_combine_and_apply([(g > spec.goal_names) for g in local_goal_history[:-1]], np.concatenate)
     acs = d.leaf_combine_and_apply([(a > spec.action_names) for a in local_ac_history], np.concatenate)
-    out_obs = d.leaf_combine_and_apply([(o > raw_out_obs_names) for o in local_obs_history[1:]], np.concatenate)
+    out_obs = d.leaf_combine_and_apply([(o > (raw_out_obs_names + spec.final_names)) for o in local_obs_history[1:]], np.concatenate)
     out_goals = d.leaf_combine_and_apply([(g > raw_out_goal_names) for g in local_goal_history[1:]], np.concatenate)
 
     # inputs are just the obs / goals / actions
@@ -212,6 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--track_returns', action="store_true")
     parser.add_argument('--reduce_returns', type=str, default='sum', choices=list(reduce_map_fn.keys()),
                         help='If tracking returns, will apply this func to the returns before tracking..')
+    parser.add_argument('--return_thresh', type=float, default=None)
     args, unknown = parser.parse_known_args()
 
     # determine when to stop collecting (either episode or step based)
@@ -278,22 +277,25 @@ if __name__ == '__main__':
         obs, goal = env.reset()
         policy.reset_policy(next_obs=obs, next_goal=goal)
 
-        obs_history, goal_history, ac_history = rollout(args, policy, env, model, obs, goal)
+        obs_history, goal_history, ac_history, returns = rollout(args, policy, env, model, obs, goal)
 
-        step += len(obs_history) - 1
-        ep += 1
+        if not args.track_returns or args.return_thresh is None or returns >= args.return_thresh:
+            step += len(obs_history) - 1
+            ep += 1
 
-        inputs, outputs = parse_history(env_spec, obs_history, goal_history, ac_history)
+            inputs, outputs = parse_history(env_spec, obs_history, goal_history, ac_history)
 
-        # actually add to dataset
-        dataset_save.add_episode(inputs, outputs)
+            # actually add to dataset
+            dataset_save.add_episode(inputs, outputs)
 
-        if is_next_cycle(ep, args.save_every_n_episodes):
-            logger.warn(f"[{step}] Saving data after {ep} episodes, data len = {len(dataset_save)}")
-            # save to dataset (optionally in chunks)
-            first_to_save_ep = save(dataset_save, start_offset=args.save_start_ep,
-                                    first_to_save_ep=first_to_save_ep, save_chunks=args.save_chunks)
-            last_save = step
+            if is_next_cycle(ep, args.save_every_n_episodes):
+                logger.warn(f"[{step}] Saving data after {ep} episodes, data len = {len(dataset_save)}")
+                # save to dataset (optionally in chunks)
+                first_to_save_ep = save(dataset_save, start_offset=args.save_start_ep,
+                                        first_to_save_ep=first_to_save_ep, save_chunks=args.save_chunks)
+                last_save = step
+        else:
+            logger.warn(f"Not adding episode (returns={returns}, less than thresh={args.return_thresh})")
 
     logger.info(f"[{step}] Terminating after {ep} episodes. Final data len = {len(dataset_save)}")
 
