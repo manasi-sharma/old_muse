@@ -5,15 +5,15 @@ from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
 from scipy.spatial.transform import Rotation
 
-from muse.envs.bullet_envs.block3d.block_env_3d import BlockEnv3D
 from muse.envs.bullet_envs.robot_bullet_env import RobotBulletEnv
 from muse.envs.env import make
 from muse.policies.policy import Policy
 from muse.policies.scripted.robosuite_policies import get_min_yaw
 from muse.policies.waypoint import Waypoint
 from muse.utils import transform_utils as T
+from muse.utils.geometry_utils import CoordinateFrame, world_frame_3D
 from muse.utils.np_utils import clip_norm
-from muse.utils.torch_utils import to_numpy
+from muse.utils.torch_utils import to_numpy, dc_add_horizon_dim
 
 
 class WaypointPolicy(Policy):
@@ -21,6 +21,7 @@ class WaypointPolicy(Policy):
     def _init_params_to_attrs(self, params):
         self._max_pos_vel = get_with_default(params, "max_pos_vel", 0.4, map_fn=np.asarray)  # m/s per axis
         self._max_ori_vel = get_with_default(params, "max_ori_vel", 5.0, map_fn=np.asarray)  # rad/s per axis
+        self._max_gr_vel = get_with_default(params, "max_gr_vel", 150., map_fn=np.asarray)  # out of 255
 
     def _init_setup(self):
         assert self._env is not None
@@ -45,9 +46,9 @@ class WaypointPolicy(Policy):
 
     def get_action(self, model, observation, goal, **kwargs):
         # todo multirobot support
-        keys = ['ee_position', 'ee_orientation', 'ee_orientation_eul', 'gripper_pos', 'objects']
+        keys = ['gripper_tip_pos', 'ee_orientation_eul', 'gripper_pos', 'objects']
         # index out batch and horizon
-        pos, quat, ori, gr, obj_d = (observation > keys).leaf_apply(
+        pos, ori, gr, obj_d = (observation > keys).leaf_apply(
             lambda arr: to_numpy(arr[0, 0], check=True)).get_keys_required(keys)
 
         object_poses = np.concatenate([obj_d["position"], obj_d["orientation_eul"]], axis=-1)
@@ -85,10 +86,19 @@ class WaypointPolicy(Policy):
         abs_q_angle_clipped = min(abs(q_angle), mov * self._env.dt)
         goal_q = T.quat_slerp(curr_q, target_q, abs(abs_q_angle_clipped / q_angle))
         # goal_eul = T.quat2euler_ext(goal_q)
-        dori = T.quat2euler(T.quat_difference(goal_q, curr_q))
+        # dori = T.quat2euler(T.quat_difference(goal_q, curr_q))
         # dori = np.zeros(3)  #orientation_error(T.euler2mat(wp_pose[3:]), T.euler2mat(ori))
 
+        # account for tip in ee frame (right now assumes that orientations are the same for tip and ee)
+        tip_in_ee = env.tip_in_ee_frame
+        ee_frame = env.robot.get_end_effector_frame()
+        tip_frame = CoordinateFrame(ee_frame, tip_in_ee.rot.inv(), tip_in_ee.pos)
+        desired_tip_pose = np.concatenate([pos + dpos, T.quat2euler(goal_q)])
+        desired_pose = world_frame_3D.pose_apply_a_to_b(desired_tip_pose, tip_frame, ee_frame)
+
         goal_gr = wp_grip
+
+        new_gr = gr[0] + np.clip(goal_gr - gr[0], -self._max_gr_vel * self._env.dt, self._max_gr_vel * self._env.dt)
 
         self._curr_step += 1
 
@@ -98,7 +108,8 @@ class WaypointPolicy(Policy):
                 orientation_eul=wp_pose[3:],
                 gripper=np.array([wp_grip]),
             ),
-            action=np.concatenate([dpos, dori, [goal_gr]]),
+            # absolute position action
+            action=np.concatenate([desired_pose, [new_gr]]),
             policy_name=np.array([self.curr_name]),
             policy_type=np.array([self.policy_type]),
         ).leaf_apply(lambda arr: arr[None])
@@ -124,14 +135,14 @@ class WaypointPolicy(Policy):
         return self._done
 
 
-def get_lift_block_policy_params(obs, goal, env=None, random_motion=True):
-    keys = ['ee_position', 'ee_orientation', 'ee_orientation_eul', 'gripper_pos', 'objects']
+def get_lift_block_policy_params(obs, goal, env=None, random_motion=False):
+    keys = ['gripper_tip_pos', 'ee_orientation_eul', 'gripper_pos', 'objects']
     # index out batch and horizon
     pos, _, grq, od = (obs > keys).leaf_apply(lambda arr: to_numpy(arr[0], check=True)).get_keys_required(keys)
 
-    base_ori = np.array([-np.pi, 0, 0])
-    base_offset = np.array([0.06, 0., 0.])
-    obj_q = od["orientation"][0]
+    base_ori = np.array([-np.pi, 0, -np.pi/2])
+    base_offset = np.array([0.0, 0., 0.015])
+    obj_q = T.fast_euler2quat(od["orientation_eul"][0])
     offset = Rotation.from_quat(obj_q).apply(base_offset)
 
     obj_yaw = T.quat2euler(obj_q)[2]
@@ -152,22 +163,24 @@ def get_lift_block_policy_params(obs, goal, env=None, random_motion=True):
     # desired_yaw = (desired_obj_yaw + np.pi) % (2 * np.pi) - np.pi
     # desired_yaw = get_min_yaw(desired_yaw)
 
+    hz = int(1 / env.dt)
+
     # print(np.rad2deg(obj_yaw), np.rad2deg(yaw))
     ori = (Rotation.from_euler("xyz", base_ori) * Rotation.from_euler("z", -yaw)).as_euler("xyz")
     ori_goal = (Rotation.from_euler("xyz", base_ori) * Rotation.from_euler("z", -desired_yaw)).as_euler("xyz")
 
     # open
-    above = Waypoint(np.concatenate([offset + np.array([0., 0., 0.05]), ori]), -1, timeout=20 * 6,
+    above = Waypoint(np.concatenate([offset + np.array([0., 0., 0.05]), ori]), 0, timeout=hz * 6,
                      relative_to_parent=False,
                      relative_to_object=0,
                      relative_ori=False)
 
-    down = Waypoint(np.concatenate([offset, ori]), -1, timeout=20 * 1.5,
+    down = Waypoint(np.concatenate([offset, ori]), 0, timeout=hz * 1.5,
                     relative_to_parent=False,
                     relative_to_object=0,
                     relative_ori=False)
 
-    grasp = Waypoint(np.concatenate([offset, ori]), 1, timeout=20 * 1,
+    grasp = Waypoint(np.concatenate([offset, ori]), 200, timeout=hz * 1,
                      relative_to_parent=False,
                      relative_to_object=0,
                      relative_ori=False, check_reach=False)
@@ -175,9 +188,10 @@ def get_lift_block_policy_params(obs, goal, env=None, random_motion=True):
     up_pos = np.array([0., 0., 0.15])
     if random_motion:
         up_pos[:2] += np.random.uniform(-0.04, 0.04, 2)
-    up_rot = Waypoint(np.concatenate([up_pos, ori_goal]), 1, timeout=20 * 3,
+    up_rot = Waypoint(np.concatenate([up_pos, ori_goal]), 0, timeout=hz * 3,
                       relative_to_parent=True,
                       relative_to_object=0,
+                      relative_gripper=True,
                       relative_ori=False, )
 
     return d(name='lift', pose_waypoints=[above, down, grasp, up_rot])
@@ -185,9 +199,14 @@ def get_lift_block_policy_params(obs, goal, env=None, random_motion=True):
 
 # teleop code as a test
 if __name__ == '__main__':
-    # parser = argparse.ArgumentParser()
-    # args = parser.parse_args()
+    import argparse
+    import imageio
     import multiprocessing as mp
+    from muse.envs.bullet_envs.block3d.block_env_3d import BlockEnv3D
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--save_path', type=str, default=None)
+    args = parser.parse_args()
 
     if sys.platform != "linux":
         mp.set_start_method('spawn')  # macos thing i think
@@ -196,6 +215,10 @@ if __name__ == '__main__':
 
     params = d(
         render=True,
+        compute_images=True,
+        compute_ego_images=True,
+        img_width=128,
+        img_height=128,
         debug_cam_dist=0.35,
         debug_cam_p=-45,
         debug_cam_y=0,
@@ -212,6 +235,18 @@ if __name__ == '__main__':
     policy.reset_policy(**policy_params.as_dict())
 
     done = [False]
+    imgs = []
+    ego_imgs = []
     while not done[0] and not policy.is_terminated(None, obs, goal):
-        action = policy.get_action(None, obs, goal)
+        action = policy.get_action(None, dc_add_horizon_dim(obs), dc_add_horizon_dim(goal))
         obs, goal, done = env.step(action)
+        if args.save_path:
+            imgs.append(obs.image)
+            ego_imgs.append(obs.ego_image)
+
+    # saving video
+    if args.save_path:
+        imgs = np.concatenate(imgs, axis=0)
+        ego_imgs = np.concatenate(ego_imgs, axis=0)
+        all_imgs = np.concatenate([imgs, ego_imgs], axis=2)
+        imageio.mimsave(args.save_path, all_imgs.astype(np.uint8), format='mp4', fps=1 / env.dt)

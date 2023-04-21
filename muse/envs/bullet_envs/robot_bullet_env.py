@@ -70,11 +70,15 @@ class RobotBulletEnv(Env, VRInterface):
         self._control_inner_step = get_with_default(params, "control_inner_step", True)  # where to call _control
         self._max_steps = get_with_default(params, "max_steps", np.inf, map_fn=int)  # how many steps to run before quitting
 
-        self.compute_images = get_with_default(params, "compute_images", True)  # returning images or not, False should speed things up
+        # returning images or not, False should speed things up
+        self.compute_images = get_with_default(params, "compute_images", True)
+        # returning ego images or not, False should speed things up
+        self.compute_ego_images = get_with_default(params, "compute_ego_images", False)
+        self.ego_tilt_angle = get_with_default(params, "ego_tilt_angle", np.deg2rad(25))  # tilt off vertical
 
         # allows GL rendering,
         self.non_gui_mode = get_with_default(params, "non_gui_mode",
-                                             p.GUI if self.compute_images and "DISPLAY" in os.environ.keys() else p.DIRECT)
+                                             p.GUI if (self.compute_images or self.compute_ego_images) and "DISPLAY" in os.environ.keys() else p.DIRECT)
 
 
         self.env_reward_fn = get_with_default(params, "env_reward_fn", None)  # computes reward, optional
@@ -279,7 +283,8 @@ class RobotBulletEnv(Env, VRInterface):
         return next_obs, next_goal, done
 
     def _step_suffix(self, action, ret_images=True, **kwargs):
-        next_obs = self._get_obs(ret_images=ret_images and self.compute_images)
+        next_obs = self._get_obs(ret_images=ret_images and self.compute_images,
+                                 ret_ego_images=ret_images and self.compute_ego_images)
         done = self._get_done(obs=next_obs)
         if not next_obs.has_leaf_key("reward"):
             next_obs.reward = self._get_reward(self._curr_obs, next_obs, AttrDict(), action, done)
@@ -366,7 +371,8 @@ class RobotBulletEnv(Env, VRInterface):
         # process = psutil.Process(os.getpid())
         # after = process.memory_info().rss
         # logger.debug("-> After resetting things: %s | delta = %s" % (after, after - before))
-        obs = self._get_obs(ret_images=presets.get("ret_images", True) and self.compute_images)
+        obs = self._get_obs(ret_images=presets.get("ret_images", True) and self.compute_images,
+                            ret_ego_images=presets.get("ret_images", True) and self.compute_ego_images)
         if not obs.has_leaf_key("reward"):
             obs.reward = np.zeros((1, 1))
         done = self._get_done(obs=obs)

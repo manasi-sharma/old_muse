@@ -498,8 +498,8 @@ class BlockEnv3D(RobotBulletEnv):
         cpts = p.getContactPoints(self.robotId, self.table_id, physicsClientId=self.id)
         return len(cpts) > 0
 
-    def _get_obs(self, ret_images=False, seg_flag=False, **kwargs):
-        assert not seg_flag or ret_images
+    def _get_obs(self, ret_images=False, ret_ego_images=False, seg_flag=False, **kwargs):
+        assert not seg_flag or (ret_images or ret_ego_images)
 
         with timeit("env/get_obs/robot"):
             obs = d()
@@ -531,6 +531,31 @@ class BlockEnv3D(RobotBulletEnv):
 
             if seg_flag:
                 obs.seg = img_info[4][None]  # seg map
+
+        if ret_ego_images:
+            # get images
+            with timeit("env/get_obs/ego_image"):
+                ee_frame = self.robot.get_end_effector_frame()
+                cam_frame = CoordinateFrame(ee_frame, R.from_rotvec([0., self.ego_tilt_angle, 0.]),
+                                            np.array([0.1, 0., 0.]))
+                forward = CoordinateFrame.point_from_a_to_b([0., 0., 0.1], cam_frame, world_frame_3D)
+                up = CoordinateFrame.rotate_from_a_to_b([1.0, 0., 0.], cam_frame, world_frame_3D)
+                ego_view_matrix = p.computeViewMatrix(cam_frame.pos, forward, up, physicsClientId=self.id)
+                img_info = p.getCameraImage(width=self.img_width,
+                                            height=self.img_height,
+                                            viewMatrix=ego_view_matrix,
+                                            projectionMatrix=self.proj_matrix,
+                                            shadow=True,
+                                            flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX if seg_flag else p.ER_NO_SEGMENTATION_MASK,
+                                            renderer=p.ER_BULLET_HARDWARE_OPENGL)
+
+                #TODO: Check if it works
+                obs.ego_image = np.array(img_info[2]).reshape(self.img_width, self.img_height, 4)
+                obs.ego_image = obs.ego_image[None,:,:,:3]
+                #obs.image = img_info[2][None, :, :, :3][..., ::-1]  # rgb image
+
+            if seg_flag:
+                obs.ego_seg = img_info[4][None]  # seg map
 
         with timeit("env/get_obs/objects"):
             # obs.leaf_apply(lambda arr: arr.shape).pprint()
@@ -874,6 +899,7 @@ class BlockEnv3D(RobotBulletEnv):
         time_step=0.02,
         num_blocks=1,
         compute_images=False,
+        compute_ego_images=False,
         debug=False,
         # robot start is randomized
         do_random_ee_position=True,
@@ -894,6 +920,7 @@ class BlockEnv3D(RobotBulletEnv):
     def get_default_env_spec_params(params=None):
         # NB = 1, img_height = 256, img_width = 256, img_channels = 3, no_names = False
         imgs = get_with_default(params, "compute_images", True)
+        ego_imgs = get_with_default(params, "compute_ego_images", True)
         img_height = get_with_default(params, "img_height", 256)
         img_width = get_with_default(params, "img_width", 256)
         nb = get_with_default(params, "num_blocks", 1)
@@ -902,6 +929,7 @@ class BlockEnv3D(RobotBulletEnv):
             cls=ParamEnvSpec,
             names_shapes_limits_dtypes=[
                 ("image", (img_height, img_width, 3), (0, 255), np.uint8),
+                ("ego_image", (img_height, img_width, 3), (0, 255), np.uint8),
                 ('wrist_ft', (6,), (-np.inf, np.inf), np.float32),
                 ('ee_position', (3,), (-np.inf, np.inf), np.float32),
                 ('ee_orientation_eul', (3,), (-np.inf, np.inf), np.float32),
@@ -945,8 +973,10 @@ class BlockEnv3D(RobotBulletEnv):
         )
         # if no_names:
         #     prms.action_names.remove('policy_name')
-        #if imgs:
-        #    prms.observation_names.append(imgs)
+        if imgs:
+           prms.observation_names.append('image')
+        if ego_imgs:
+           prms.observation_names.append('ego_image')
         return prms
 
 
