@@ -16,6 +16,7 @@ class Waypoint:
                  relative_ori=True,
                  relative_gripper=False,
                  check_reach=True,
+                 grasping=False,
                  max_pos_vel=None,
                  max_ori_vel=None,):
         # if False, will use the last state, not the last waypoint of the given robot/object
@@ -37,15 +38,24 @@ class Waypoint:
         self._base_pose = pose.copy()
         self._base_gripper = gripper
         self.timeout = timeout
+
+        # things that a policy might use
         self.check_reach = check_reach  # will check reached, otherwise wait til timeout
+        self.grasping = grasping  # will denote a grasping behavior for this waypoint
 
         self.max_pos_vel = max_pos_vel  # policy can choose to use this to limit vel
         self.max_ori_vel = max_ori_vel  # policy can choose to use this to limit vel
+
+        self._init_gripper = None
 
         self.cf = None
         self.gripper = None
 
     def update(self, parent, robot_poses, object_poses, gripper):
+        # set initial gripper if we are relative
+        if self._init_gripper is None:
+            self._init_gripper = gripper
+
         # get the source
         if self.relative_to_robot < 0 and self.relative_to_object < 0:
             # don't keep creating things if not relative to anything.
@@ -53,10 +63,11 @@ class Waypoint:
             self.gripper = self._base_gripper
         else:
             if self.relative_to_parent:
-                rel_source_pose, rel_gripper = parent.pose_and_gripper  # last cf,gripper of the parent
+                rel_source_pose, _ = parent.pose_and_gripper  # last cf of the parent
             else:
                 rel_source_pose = robot_poses[self.relative_to_robot] if self.relative_to_robot >= 0 else object_poses[self.relative_to_object]
-                rel_gripper = gripper  # last gripper
+
+            rel_gripper = self._init_gripper  # first gripper
 
             rel_source_pose = rel_source_pose.copy()  # since we will be modifying
             if not self.relative_pos:
