@@ -25,7 +25,7 @@ export = d(
     model=vis_bc_rnn.export & d(
         state_names=['ee_position', 'ee_orientation', 'gripper_pos'],
         vision_encoder=d(
-            image_shape=[320, 240, 3],
+            image_shape=[240, 320, 3],
             img_embed_size=128,
         ),
         device=F('device'),
