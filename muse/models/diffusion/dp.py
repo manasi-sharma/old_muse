@@ -8,6 +8,7 @@ from muse.utils.general_utils import params_to_object, timeit
 from muse.utils.param_utils import LayerParams
 from muse.utils.torch_utils import combine_then_concatenate
 
+import muse.models.diffusion.schedulers.batch_ddpm_scheduler as ddpm_sched
 
 class DiffusionPolicyModel(Model):
     """
@@ -86,6 +87,8 @@ class DiffusionPolicyModel(Model):
                            generator=None,
                            ):
         scheduler = self.noise_scheduler
+        if isinstance(scheduler, ddpm_sched.BatchDDPMScheduler):
+            return self.parallel_conditional_sample(condition_data, condition_mask, local_cond, global_cond, generator)
 
         trajectory = torch.randn(
             size=condition_data.shape,
@@ -109,6 +112,107 @@ class DiffusionPolicyModel(Model):
                 model_output, t, trajectory,
                 generator=generator,
             ).prev_sample
+
+        # finally make sure conditioning is enforced
+        trajectory[condition_mask] = condition_data[condition_mask]
+
+        return trajectory
+
+    def parallel_conditional_sample(self,
+                           condition_data, condition_mask,
+                           local_cond=None, global_cond=None,
+                           generator=None, parallel=20, tolerance=1.0,
+                           ):
+        scheduler = self.noise_scheduler
+
+        # make sure arguments are valid
+        assert isinstance(scheduler, ddpm_sched.BatchDDPMScheduler)
+        assert parallel <= len(scheduler.timesteps)
+        assert tolerance > 0.0
+
+        trajectory = torch.randn(
+            size=condition_data.shape,
+            dtype=condition_data.dtype,
+            device=condition_data.device,
+            generator=generator)
+
+        # set step values
+        scheduler.set_timesteps(self.num_inference_steps, device=condition_data.device)
+
+        # set up parallel utilities
+        def flatten_batch_dims(x):
+            # change (parallel, B, T, D) to (parallel*B, T, D)
+            return x.reshape(-1, *x.shape[2:]) if x is not None else None
+
+        begin_idx = 0
+        end_idx = parallel
+        stats_pass_count = 0
+        stats_flop_count = 0
+
+        trajectory_time_evolution_buffer = torch.stack([trajectory] * (len(scheduler.timesteps)+1))
+
+        variance_array = torch.zeros_like(trajectory_time_evolution_buffer)
+        for j in range(len(scheduler.timesteps)):
+            variance_noise = torch.randn_like(trajectory_time_evolution_buffer[0]) # should use generator (waiting for pytorch add to randn_like)
+            variance = (scheduler._get_variance(scheduler.timesteps[j]) ** 0.5) * variance_noise
+            variance_array[j] = variance.clone()
+        inverse_variance_norm = 1. / torch.linalg.norm(variance_array.reshape(len(scheduler.timesteps)+1, -1), dim=1)
+
+        while begin_idx < len(scheduler.timesteps):
+
+            parallel_len = end_idx - begin_idx
+
+            block_trajectory = trajectory_time_evolution_buffer[begin_idx:end_idx]
+            block_t = scheduler.timesteps[begin_idx:end_idx]
+            block_local_cond = torch.stack([local_cond] * parallel_len) if local_cond is not None else None
+            block_global_cond = torch.stack([global_cond] * parallel_len) if global_cond is not None else None
+
+            # 1. apply conditioning
+            block_trajectory[:,condition_mask] = condition_data[condition_mask]
+
+            # 2. predict model output
+            model_output = self.generator(
+                sample=flatten_batch_dims(block_trajectory),
+                timestep=block_t,
+                local_cond=flatten_batch_dims(block_local_cond),
+                global_cond=flatten_batch_dims(block_global_cond)
+            )
+
+            # 3. compute previous image in parallel: x_t -> x_t-1
+            block_trajectory_denoise = scheduler.batch_step_no_noise(
+                model_output=model_output,
+                timesteps=block_t,
+                sample=flatten_batch_dims(block_trajectory),
+            ).reshape(*block_trajectory.shape)
+
+            # parallel update
+            delta = block_trajectory_denoise - block_trajectory
+            cumulative_delta = torch.cumsum(delta, dim=0)
+            cumulative_variance = torch.cumsum(variance_array[begin_idx:end_idx], dim=0)
+
+            block_trajectory_new = trajectory_time_evolution_buffer[begin_idx][None,] + cumulative_delta + cumulative_variance
+            cur_error = torch.linalg.norm( (block_trajectory_new - trajectory_time_evolution_buffer[begin_idx+1:end_idx+1]).reshape(parallel_len, -1), dim=1)
+            error_ratio = cur_error * inverse_variance_norm[begin_idx:end_idx]
+
+            # find the first index of the vector error_ratio that is greater than error tolerance
+            error_ratio = torch.nn.functional.pad(error_ratio, (0,1), value=1e9) # handle the case when everything is below ratio
+            ind = torch.argmax( (error_ratio > tolerance).int() ).item()
+
+            new_begin_idx = begin_idx + max(1, ind)
+            new_end_idx = min(new_begin_idx + parallel, len(scheduler.timesteps))
+
+            trajectory_time_evolution_buffer[begin_idx+1:end_idx+1] = block_trajectory_new
+            trajectory_time_evolution_buffer[end_idx:new_end_idx+1] = trajectory_time_evolution_buffer[end_idx][None,] # hopefully better than random initialization
+
+            begin_idx = new_begin_idx
+            end_idx = new_end_idx
+
+            stats_pass_count += 1
+            stats_flop_count += parallel_len
+
+        # print("batch pass count", stats_pass_count)
+        # print("model pass count", stats_flop_count)
+        trajectory = trajectory_time_evolution_buffer[-1]
 
         # finally make sure conditioning is enforced
         trajectory[condition_mask] = condition_data[condition_mask]
