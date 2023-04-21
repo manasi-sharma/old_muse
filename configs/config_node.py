@@ -412,6 +412,10 @@ if __name__ == '__main__':
                 nested_group=d(
                     cls=Model,
                     inside_param=10,
+                    inner_nested_group=d(
+                        cls=Model,
+                        guess=100,
+                    )
                 )
             ),
             policy=d(

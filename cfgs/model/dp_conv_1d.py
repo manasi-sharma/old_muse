@@ -39,7 +39,6 @@ export = d(
         n_action_steps=8,  # inference run every 8 steps.
         n_obs_steps=2,
         decoder=d(
-            num_inference_steps=None,  # sets to same # steps as during training
             generator=d(),  # override here to change generator beyond default
             noise_scheduler=d()  # override here to change noise scheduler beyond default
         )

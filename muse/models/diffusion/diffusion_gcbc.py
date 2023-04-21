@@ -31,6 +31,9 @@ class DiffusionConvActionDecoder(ActionDecoder):
         Argument('n_obs_steps', type=int, required=True,
                  help='how many obs steps to condition on'),
 
+        Argument('num_inference_steps', type=int, default=None,
+                 help='How many inference steps to run'),
+
         Argument('use_ddim', action='store_true',
                  help='Use DDIM as the default noise scheduler.')
 
@@ -95,6 +98,7 @@ class DiffusionConvActionDecoder(ActionDecoder):
             noise_scheduler=noise_scheduler,
             n_action_steps=self.n_action_steps,
             n_obs_steps=self.n_obs_steps,
+            num_inference_steps=self.num_inference_steps,
             obs_as_global_cond=True,
         )
 
