@@ -21,11 +21,12 @@ class WaypointPolicy(Policy):
     def _init_params_to_attrs(self, params):
         self._max_pos_vel = get_with_default(params, "max_pos_vel", 0.6, map_fn=np.asarray)  # m/s per axis
         self._max_ori_vel = get_with_default(params, "max_ori_vel", 6.0, map_fn=np.asarray)  # rad/s per axis
-        self._max_gr_vel = get_with_default(params, "max_gr_vel", 220., map_fn=np.asarray)  # out of 255
+        self._max_gr_vel = get_with_default(params, "max_gr_vel", 1.6, map_fn=np.asarray)  # in -1 to 1 range
 
     def _init_setup(self):
         assert self._env is not None
         assert isinstance(self._env, RobotBulletEnv), type(self._env)
+        self._use_delta = self._env.action_mode.endswith('delta')
 
     def warm_start(self, model, observation, goal):
         pass
@@ -106,6 +107,11 @@ class WaypointPolicy(Policy):
 
         self._curr_step += 1
 
+        if self._use_delta:
+            ac = np.concatenate([T.get_pose_error(desired_pose, ee_frame.as_pose()), [new_gr]])
+        else:
+            ac = np.concatenate([desired_pose, [new_gr]])
+
         return d(
             target=d(
                 ee_position=wp_pose[:3],
@@ -113,7 +119,7 @@ class WaypointPolicy(Policy):
                 gripper_pos=np.array([wp_grip]),
             ),
             # absolute position action
-            action=np.concatenate([desired_pose, [new_gr]]),
+            action=ac,
             policy_name=np.array([self.curr_name]),
             policy_type=np.array([self.policy_type]),
         ).leaf_apply(lambda arr: arr[None])
@@ -199,17 +205,17 @@ def get_lift_block_policy_params(obs, goal, env=None, random_motion=False, rando
     # ori_goal = (Rotation.from_euler("xyz", base_ori) * Rotation.from_euler("z", -desired_yaw)).as_euler("xyz")
 
     # open
-    above = Waypoint(np.concatenate([offset + np.array([0., 0., 0.05]), ori]), 0, timeout=hz * 6,
+    above = Waypoint(np.concatenate([offset + np.array([0., 0., 0.05]), ori]), -1, timeout=hz * 6,
                      relative_to_parent=False,
                      relative_to_object=0,
                      relative_ori=False)
 
-    down = Waypoint(np.concatenate([offset, ori]), 0, timeout=hz * 1.5,
+    down = Waypoint(np.concatenate([offset, ori]), -1, timeout=hz * 1.5,
                     relative_to_parent=False,
                     relative_to_object=0,
                     relative_ori=False)
 
-    grasp = Waypoint(np.concatenate([offset, ori]), 240, timeout=hz * 1,
+    grasp = Waypoint(np.concatenate([offset, ori]), 0.9, timeout=hz * 1,
                      relative_to_parent=False,
                      relative_to_object=0,
                      grasping=True,  # stops on grasp
@@ -220,7 +226,7 @@ def get_lift_block_policy_params(obs, goal, env=None, random_motion=False, rando
         up_pos[:2] += np.random.uniform(-0.04, 0.04, 2)
 
     # relative to gripper, close a bit more
-    up_rot = Waypoint(np.concatenate([offset + up_pos, ori]), 10, timeout=hz * 3,
+    up_rot = Waypoint(np.concatenate([offset + up_pos, ori]), 0.08, timeout=hz * 3,
                       relative_to_parent=True,
                       relative_to_object=0,
                       relative_gripper=True,
@@ -249,6 +255,7 @@ if __name__ == '__main__':
         render=True,
         # compute_images=True,
         # compute_ego_images=True,
+        action_mode='ee_euler_delta',
         img_width=128,
         img_height=128,
         debug_cam_dist=0.35,

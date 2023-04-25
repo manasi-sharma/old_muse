@@ -21,6 +21,7 @@ from muse.envs.bullet_envs.pybullet_utils import draw_cyl_gui, draw_point_gui
 from muse.utils.general_utils import timeit, is_next_cycle
 from attrdict import AttrDict as d
 from attrdict.utils import get_with_default
+from muse.utils import transform_utils as T
 
 ## plotting forces
 import multiprocessing as mp
@@ -524,10 +525,10 @@ class BlockEnv3D(RobotBulletEnv):
                                             flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX if seg_flag else p.ER_NO_SEGMENTATION_MASK,
                                             renderer=p.ER_BULLET_HARDWARE_OPENGL)
 
-                #TODO: Check if it works
+                # TODO: Check if it works
                 obs.image = np.array(img_info[2]).reshape(self.img_width, self.img_height, 4)
-                obs.image = obs.image[None,:,:,:3]
-                #obs.image = img_info[2][None, :, :, :3][..., ::-1]  # rgb image
+                obs.image = obs.image[None, :, :, :3]
+                # obs.image = img_info[2][None, :, :, :3][..., ::-1]  # rgb image
 
             if seg_flag:
                 obs.seg = img_info[4][None]  # seg map
@@ -549,10 +550,10 @@ class BlockEnv3D(RobotBulletEnv):
                                             flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX if seg_flag else p.ER_NO_SEGMENTATION_MASK,
                                             renderer=p.ER_BULLET_HARDWARE_OPENGL)
 
-                #TODO: Check if it works
+                # TODO: Check if it works
                 obs.ego_image = np.array(img_info[2]).reshape(self.img_width, self.img_height, 4)
-                obs.ego_image = obs.ego_image[None,:,:,:3]
-                #obs.image = img_info[2][None, :, :, :3][..., ::-1]  # rgb image
+                obs.ego_image = obs.ego_image[None, :, :, :3]
+                # obs.image = img_info[2][None, :, :, :3][..., ::-1]  # rgb image
 
             if seg_flag:
                 obs.ego_seg = img_info[4][None]  # seg map
@@ -564,7 +565,6 @@ class BlockEnv3D(RobotBulletEnv):
                 lambda vs: np.concatenate(vs, axis=1))
 
         return obs.leaf_filter_keys(self.env_spec.all_names)
-
 
     def _step_simulation(self):
         super(BlockEnv3D, self)._step_simulation()
@@ -628,6 +628,7 @@ class BlockEnv3D(RobotBulletEnv):
         self._initial_joint_positions[:] = q
 
     def cleanup(self):
+        super().cleanup()
         if self._reinit_objects_on_reset:
             for o in self.objects:
                 if o.id is not None:
@@ -805,7 +806,7 @@ class BlockEnv3D(RobotBulletEnv):
 
         elif self.robot_controller_mode == RCM.xddot_pid:
             assert len(action) == 7, action.shape
-            # interpret action as pos + orn(eul) + forces (+ grip)
+            # interpret action as pos + orn(eul) (+ grip)
             if self._clip_ee_ori:
                 action[3:6] = clip_ee_orientation_conical(action[3:6], ee_axis=np.array([0, 0, 1.]),
                                                           world_axis=np.array([0, 0, -1.]), max_theta=np.pi / 4)
@@ -881,6 +882,20 @@ class BlockEnv3D(RobotBulletEnv):
                                             uncoupled=False,
                                             grip_pos=grip)
 
+    def get_ee_pos(self):
+        return self.robot.get_end_effector_pos()
+
+    def get_ee_eul(self):
+        return T.fast_quat2euler(self.robot.get_end_effector_orn())
+
+    def get_gripper(self, normalized=True):
+        gr = self.robot.get_gripper_pos()
+        if normalized:
+            # -1 open, 1 closed
+            return 2 * (gr - self.gripper_range[0]) / (self.gripper_range[1] - self.gripper_range[0]) - 1
+        else:
+            return gr
+
     def get_safenet(self):
         # default safenet is determined by the table boundaries.
         low, high = self.table_aabb[0], self.table_aabb[1]
@@ -903,6 +918,7 @@ class BlockEnv3D(RobotBulletEnv):
         debug=False,
         # robot start is randomized
         do_random_ee_position=True,
+        action_mode='ee_euler',
 
         object_shape_bounds={'block': (np.broadcast_to(BLOCK_LOW, (3,)), np.broadcast_to(BLOCK_HIGH, (3,))),
                              'mug': (np.array([MUG_SCALES[0]]), np.array([MUG_SCALES[1]]))},
@@ -924,6 +940,11 @@ class BlockEnv3D(RobotBulletEnv):
         img_height = get_with_default(params, "img_height", 256)
         img_width = get_with_default(params, "img_width", 256)
         nb = get_with_default(params, "num_blocks", 1)
+
+        ac_mode = get_with_default(params, "action_mode", 'ee_euler')
+        AC_DIM = __class__.action_modes[ac_mode]
+        low = __class__.action_low[ac_mode]
+        high = __class__.action_high[ac_mode]
 
         prms = d(
             cls=ParamEnvSpec,
@@ -949,10 +970,10 @@ class BlockEnv3D(RobotBulletEnv):
                 ('objects/aabb', (nb, 6), (0, np.inf), np.float32),
 
                 # TODO in a pre-defined box of allowed motion.
-                ('action', (7,), (-1, 1), np.float32),
+                ('action', (AC_DIM,), (low, high), np.float32),
                 ('target/ee_position', (3,), (-100, 100), np.float32),
                 ('target/ee_orientation_eul', (3,), (-2 * np.pi, 2 * np.pi), np.float32),
-                ('target/gripper_pos', (1,), (0, 255.), np.float32),
+                ('target/gripper_pos', (1,), (-1, 1.), np.float32),
 
                 ('reward', (1,), (0, np.inf), np.float32),
 
@@ -969,16 +990,17 @@ class BlockEnv3D(RobotBulletEnv):
             ],
             param_names=["objects/size"],
             final_names=[],
-            action_names=["action", "target/ee_position", "target/ee_orientation_eul", "target/gripper_pos"],#"policy_type",
-                         # "policy_name", "policy_switch"],
+            action_names=["action", "target/ee_position", "target/ee_orientation_eul", "target/gripper_pos"],
+            # "policy_type",
+            # "policy_name", "policy_switch"],
             output_observation_names=[]
         )
         # if no_names:
         #     prms.action_names.remove('policy_name')
         if imgs:
-           prms.observation_names.append('image')
+            prms.observation_names.append('image')
         if ego_imgs:
-           prms.observation_names.append('ego_image')
+            prms.observation_names.append('ego_image')
         return prms
 
 
@@ -1000,7 +1022,7 @@ if __name__ == '__main__':
     max_steps = 10000
 
     params = d(
-        render=True,
+        render=False,
         debug_cam_dist=0.35,
         debug_cam_p=-45,
         debug_cam_y=0,

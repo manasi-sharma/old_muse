@@ -11,6 +11,7 @@ from muse.envs.env_interfaces import VRInterface
 from muse.experiments import logger
 from muse.utils.input_utils import UserInput
 from muse.utils.general_utils import timeit
+from muse.utils import transform_utils as T
 from muse.utils.torch_utils import to_numpy
 
 from attrdict import AttrDict
@@ -43,6 +44,31 @@ class RobotBulletEnv(Env, VRInterface):
 
     """
 
+    # map mode -> action dim (add more when implemented)
+    action_modes = {
+        'ee_euler': 7,
+        'ee_euler_delta': 7,
+        'ee_quat': 8,
+        'ee_quat_delta': 8,
+        'ee_axisangle': 7,
+        'ee_axisangle_delta': 7,
+        'ee_rot6d': 10,
+    }
+
+    action_high = {
+        'ee_euler': np.array([10., 10., 10., np.pi, np.pi, np.pi, 1.]),  # TODO gripper
+        'ee_euler_delta': np.array([1.0, 1.0, 1.0, np.pi, np.pi, np.pi, 1.]),
+        'ee_quat': np.array([10., 10., 10., 1., 1., 1., 1., 1.]),
+        'ee_quat_delta': np.array([1.0, 1.0, 1.0, 1., 1., 1., 1., 1.]),
+        'ee_axisangle': np.array([10., 10., 10., np.pi, np.pi, np.pi, 1.]),
+        'ee_axisangle_delta': np.array([1.0, 1.0, 1.0, np.pi, np.pi, np.pi, 1.]),
+        'ee_rot6d': np.array([10., 10., 10.] + [1.] * 7),
+    }
+
+    action_low = {
+        m: -h for m, h in action_high.items()
+    }
+
     def __init__(self, params: AttrDict, env_spec: EnvSpec):
         super(RobotBulletEnv, self).__init__(params, env_spec)
         self.asset_directory = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../../assets')
@@ -59,34 +85,51 @@ class RobotBulletEnv(Env, VRInterface):
         self.debug_cam_p = get_with_default(params, "debug_cam_p", -45)
         self.debug_cam_y = get_with_default(params, "debug_cam_y", 40)
         self.debug_cam_target_pos = get_with_default(params, "debug_cam_target_pos", [-0.2, 0, 0.75])
-        self.gui_width, self.gui_height = get_with_default(params, "gui_width", 1920), get_with_default(params, "gui_height", 1080)
+        self.gui_width, self.gui_height = get_with_default(params, "gui_width", 1920), \
+            get_with_default(params, "gui_height", 1080)
         self.img_width, self.img_height = params << "img_width", params << "img_height"
 
-        self.time_step = get_with_default(params, "time_step", 0.02)  # stepSimulation dt
-        self.skip_n_frames_every_step = get_with_default(params, "skip_n_frames_every_step", 5)  # 10Hz default
+        """ control specific """
+        # stepSimulation dt
+        self.time_step = get_with_default(params, "time_step", 0.02)
+        # base environment controls in absolute ee_euler, so the default is the same
+        self.action_mode = get_with_default(params, "action_mode", 'ee_euler')
+        # what to use for delta actions as the base action (ground truth robot pose, or expected pose after last action)
+        self.delta_pivot = get_with_default(params, "delta_pivot", 'ground_truth')
+        # 10Hz default
+        self.skip_n_frames_every_step = get_with_default(params, "skip_n_frames_every_step", 5)
         self.dt = self.time_step * self.skip_n_frames_every_step
-        self._render = get_with_default(params, "render", False)  # no GUI default
-        self._use_gravity = get_with_default(params, "use_gravity", True)  # no gravity default
-        self._control_inner_step = get_with_default(params, "control_inner_step", True)  # where to call _control
-        self._max_steps = get_with_default(params, "max_steps", np.inf, map_fn=int)  # how many steps to run before quitting
+        assert self.action_mode in self.action_modes, f"Action mode {self.action_mode} not implemented!"
+        assert self.delta_pivot in ['ground_truth', 'expected']
+        # gripper action will be -1 to 1, this is the internal range for _control()
+        self.gripper_range = get_with_default(params, "gripper_range", np.array([0., 255.]))
+
+        # no GUI default
+        self._render = get_with_default(params, "render", False)
+        # no gravity default
+        self._use_gravity = get_with_default(params, "use_gravity", True)
+        # where to call _control
+        self._control_inner_step = get_with_default(params, "control_inner_step", True)
+        # how many steps to run before quitting
+        self._max_steps = get_with_default(params, "max_steps", np.inf, map_fn=int)
 
         # returning images or not, False should speed things up
         self.compute_images = get_with_default(params, "compute_images", True)
         # returning ego images or not, False should speed things up
         self.compute_ego_images = get_with_default(params, "compute_ego_images", False)
-        self.ego_tilt_angle = get_with_default(params, "ego_tilt_angle", np.deg2rad(25))  # tilt off vertical
+        # tilt off vertical
+        self.ego_tilt_angle = get_with_default(params, "ego_tilt_angle", np.deg2rad(25))
 
         # allows GL rendering,
         self.non_gui_mode = get_with_default(params, "non_gui_mode",
-                                             p.GUI if (self.compute_images or self.compute_ego_images) and "DISPLAY" in os.environ.keys() else p.DIRECT)
+                                             p.GUI if (self.compute_images or self.compute_ego_images)
+                                                      and "DISPLAY" in os.environ.keys() else p.DIRECT)
 
-
-        # env_reward_fn(curr_obs, goal, action, next_obs=next_obs, done=done, env=self) -> reward
-        self.env_reward_fn = get_with_default(params, "env_reward_fn", None)  # computes reward, optional
-        self._env_reward_requires_env = get_with_default(params, "env_reward_requires_env", True)  # pass in env
-
-        # if self.compute_images and self._render:
-        #     self._init_figure()
+        # computes reward, optional: 
+        #   env_reward_fn(curr_obs, goal, action, next_obs=next_obs, done=done, env=self) -> reward
+        self.env_reward_fn = get_with_default(params, "env_reward_fn", None)
+        # pass in env
+        self._env_reward_requires_env = get_with_default(params, "env_reward_requires_env", True)
 
         self.debug = get_with_default(params, "debug", False)
 
@@ -96,6 +139,7 @@ class RobotBulletEnv(Env, VRInterface):
     def _init_setup(self):
         self.id = None  # THIS SHOULD BE SET
         self._curr_obs = AttrDict()
+        self.last_action = None
 
         self._init_bullet_world()
 
@@ -238,6 +282,57 @@ class RobotBulletEnv(Env, VRInterface):
     def _get_done(self, obs: AttrDict = None):
         return np.array([self.iteration >= self._max_steps])
 
+    def _process_action(self, action):
+        """ Conversion from whatever input action space to ee pos / ori_eul
+
+        Gripper is converted from [-1 (open), 1 (closed)] to self.gripper_range
+
+        Parameters
+        ----------
+        action: (1 x ac_dim)
+
+        Returns
+        -------
+        new_action: (1 x 7) pos / ori_eul / gripper
+
+        """
+        # parse pos / orientation (dimension should match the conversion function input)
+        ee_pos = action[..., :3]
+        ori = action[..., 3:-1]
+        gripper = np.clip(action[..., -1:], -1, 1)  # -1 to 1
+        if 'euler' in self.action_mode:
+            assert ori.shape[-1] == 3
+            ee_eul = ori  # 3D
+        elif 'quat' in self.action_mode:
+            ee_eul = T.fast_quat2euler(ori)
+        elif 'rot6d' in self.action_mode:
+            ee_eul = T.mat2euler(T.rot6d2mat(ori))
+        elif 'axisangle' in self.action_mode:
+            ee_eul = T.mat2euler(T.axisangle2mat(ori))
+        else:
+            raise NotImplementedError(self.action_mode)
+
+        # turns action input to absolute ee euler (output space)
+        if self.action_mode.endswith('delta'):
+            if self.delta_pivot == 'ground_truth':
+                pivot = np.concatenate([self.get_ee_pos(), self.get_ee_eul()])[None]
+            elif self.delta_pivot == 'expected':
+                pivot = self.last_action[..., :6]
+            else:
+                raise NotImplementedError(self.delta_pivot)
+
+            # ee pos / eul interpreted as delta
+            ee_pos = pivot[..., :3] + ee_pos
+            ee_eul = T.add_euler(ee_eul, pivot[..., :3])
+
+        # un-scale gripper from (-1, 1) to gripper_range
+        gripper = self.gripper_range[0] + (self.gripper_range[1] - self.gripper_range[0]) * (gripper + 1) * 0.5
+
+        new_action = np.concatenate([ee_pos, ee_eul, gripper], axis=-1)
+
+        self.last_action = new_action.copy()
+        return new_action
+
     def step(self, action, ret_images=True, skip_render=False, **kwargs):
         with timeit("env_step/total"):
             self.iteration += 1
@@ -255,6 +350,9 @@ class RobotBulletEnv(Env, VRInterface):
                 act_np = action.copy()  # assumes not batched
             else:
                 pass
+
+            # process the action to the type expected for control(), usually absolute ee pose (eul)
+            act_np = self._process_action(act_np)
 
             # sets motor control for each joint
             if not self._control_inner_step:
@@ -380,6 +478,8 @@ class RobotBulletEnv(Env, VRInterface):
         done = self._get_done(obs=obs)
         # first obs
         self._register_obs(obs, done)
+
+        self.last_action = np.concatenate([self.get_ee_pos(), self.get_ee_eul(), [self.get_gripper(normalized=False)]])
         return obs, self._get_goal()
 
     def get_link_info(self, object_id):
@@ -393,8 +493,41 @@ class RobotBulletEnv(Env, VRInterface):
                 LinkList.append(link_name)
         return LinkList
 
+    def get_ee_pos(self):
+        raise NotImplementedError('EE pos should be implemented by subclasses')
+
+    def get_ee_eul(self):
+        raise NotImplementedError('EE eul should be implemented by subclasses')
+
+    def get_gripper(self, normalized=True):
+        raise NotImplementedError('Gripper should be implemented by subclasses')
+
     def get_num_links(self, object_id):
         return len(self.get_link_info(object_id))
+
+    @property
+    def zero_action(self):
+        if self.action_mode.endswith('delta'):
+            ac = np.zeros((self.action_modes[self.action_mode]))
+            if 'quat' in self.action_mode:
+                ac[3:7] = np.array([0, 0, 0, 1.])
+            ac[-1] = self.get_gripper()
+        else:
+            ori_eul = self.get_ee_eul()
+            if 'euler' in self.action_mode:
+                ori = ori_eul
+            elif 'quat' in self.action_mode:
+                ori = T.euler2quat(ori_eul)
+            elif 'axisangle' in self.action_mode:
+                ori = T.mat2axisangle(T.euler2mat(ori_eul))
+            elif 'rot6d' in self.action_mode:
+                ori = T.mat2rot6d(T.euler2mat(ori_eul))
+            else:
+                raise NotImplementedError(self.action_mode)
+
+            ac = np.concatenate([self.get_ee_pos(), ori, [self.get_gripper()]])
+
+        return ac
 
     def get_aabb(self, object_id):
         num_links = self.get_num_links(object_id)

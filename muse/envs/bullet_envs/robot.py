@@ -16,9 +16,6 @@ from scipy.spatial.transform import Rotation as R
 from typing import Union, Tuple, List
 
 from muse.experiments import logger
-# sys.path.append('./')
-# sys.path.insert(0,"../rllib/a3c")
-# from muse.policies.controllers.controller import Controller
 from muse.policies.controllers.pid_controller import ControlType, PIDController
 from muse.envs.bullet_envs import control_utils
 from muse.utils.geometry_utils import CoordinateFrame, world_frame_3D
@@ -36,12 +33,14 @@ class BulletRobot(object):
         self.resources_dir = params["resources_dir"]
 
         self.gripper_max_force = get_with_default(params, "gripper_max_force", None)
-        self.gripper_max_delta = get_with_default(params, "gripper_max_delta", 255.)  # can open whole gripper per step (no limit).
+        # can open whole gripper per step (no limit).
+        self.gripper_max_delta = get_with_default(params, "gripper_max_delta", 255.)
         self.arm_max_force = get_with_default(params, "armMaxForce", None)
         self.end_effector_index = get_with_default(params, "endEffectorIndex", 7)  # TODO 8?
         self.start_pos = get_with_default(params, "start_pos", np.asarray([0.4, 0.5, 0.]), map_fn=np.asarray)
 
-        self._collision_detection_links = get_with_default(params, "collision_detection_links", [2, 3, 4, 5], map_fn=list)
+        self._collision_detection_links = get_with_default(params, "collision_detection_links", [2, 3, 4, 5],
+                                                           map_fn=list)
         self._apply_ft_transform = get_with_default(params, "apply_ft_transform", False)
         if self._apply_ft_transform:
             logger.warn("Robot will return transformed f/t readings!")
@@ -79,9 +78,12 @@ class BulletRobot(object):
         self.gripper_left_tip_index = 13
         self.gripper_right_tip_index = 17
 
-        self.wrist_joint_index = 8  # panda_robotiq_coupling, for example
-        self.finger_joint_index_left = 13  # robotiq_2f_85_left_inner_finger_pad_joint
-        self.finger_joint_index_right = 17  # robotiq_2f_85_right_inner_finger_pad_joint
+        # panda_robotiq_coupling, for example
+        self.wrist_joint_index = 8
+        # robotiq_2f_85_left_inner_finger_pad_joint
+        self.finger_joint_index_left = 13
+        # robotiq_2f_85_right_inner_finger_pad_joint
+        self.finger_joint_index_right = 17
 
         self.urdf_dir = os.path.join(self.resources_dir, 'urdf')
         self._use_infinite_joint7 = get_with_default(params, "use_infinite_joint7", False)
@@ -668,11 +670,23 @@ class BulletRobot(object):
     def os_velocity_control(self, link_idx, linear_velocity: np.ndarray, angular_velocity: np.ndarray = None,
                             offset_frame: CoordinateFrame = world_frame_3D, step_simulation=False):
         """
-        :param link_idx: link idx that the pose is relative to
-        :param linear_velocity: desired linear velocity in offset frame
-        :param angular_velocity: desired angular velocity in offset frame
-        :param offset_frame: pose of frame pt in frame of joint (idx)
-        :param step_simulation: steps self.id sim
+
+        Parameters
+        ----------
+        link_idx:
+            link idx that the pose is relative to
+        linear_velocity:
+            desired linear velocity in offset frame
+        angular_velocity:
+            desired angular velocity in offset frame
+        offset_frame:
+            pose of frame pt in frame of joint (idx)
+        step_simulation:
+            steps self.id sim
+
+        Returns
+        -------
+
         """
 
         o2l = offset_frame.rot
@@ -710,20 +724,37 @@ class BulletRobot(object):
                          inertia_compensation=False, uncoupled=True,
                          step_simulation=False):
         """
-        :param link_idx: link idx that the pose is relative to
-        :param force_feedback_inputs: inputs to compute feedback for "force"
-        :param x_feedback_inputs: inputs to compute feedback for "x"
-        :param xdot_feedback_inputs: inputs to compute feedback for "x"
-        :param posture_q_inputs: inputs to compute "q" related feedback (in task null space)
-        :param posture_qdot_inputs: inputs to compute "qdot" related feedback (in task null space)
-        # :param torque: true torques in offset frame (optional), defaults to having no effect
-        # :param xddot: acceleration term in offset frame (optional), defaults to all zero
-        :param offset_frame: pose of frame pt in frame of joint (idx)
-        :param xddot_direct: This gets directly added to the xddot input, e.g. the output of a DMP policy
-        :param grip_pos: gripper q to try to reach
-        :param inertia_compensation: add the force "error" term to xddot if True, otherwise add to Mee @ xddot
-        :param uncoupled: if True, force and torque induced tau can be computed separately and added together
-        :param step_simulation: steps self.id sim
+
+        Parameters
+        ----------
+        link_idx:
+            link idx that the pose is relative to
+        force_feedback_inputs:
+            inputs to compute feedback for "force"
+        x_feedback_inputs:
+            inputs to compute feedback for "x"
+        xdot_feedback_inputs:
+            inputs to compute feedback for "x"
+        posture_q_inputs:
+            inputs to compute "q" related feedback (in task null space)
+        posture_qdot_inputs:
+            inputs to compute "qdot" related feedback (in task null space)
+        offset_frame:
+            pose of frame pt in frame of joint (idx)
+        xddot_direct:
+            This gets directly added to the xddot input, e.g. the output of a DMP policy
+        grip_pos:
+            gripper q to try to reach
+        inertia_compensation:
+            add the force "error" term to xddot if True, otherwise add to Mee @ xddot
+        uncoupled:
+            if True, force and torque induced tau can be computed separately and added together
+        step_simulation:
+            steps self.id sim
+
+        Returns
+        -------
+
         """
         assert self.controllers.has_leaf_key("force"), \
             "Controller (force) must already be instantiated before calling os_controllers"
@@ -735,9 +766,10 @@ class BulletRobot(object):
         # force_feedback = np.zeros(6)
 
         # task (OS) terms
-        x_feedback = (self.controllers["x"]).forward(x_feedback_inputs) if x_feedback_inputs is not None else np.zeros(6)
-        xdot_feedback = (self.controllers["xdot"]).forward(
-            xdot_feedback_inputs) if xdot_feedback_inputs is not None else np.zeros(6)
+        x_feedback = (self.controllers["x"]).forward(x_feedback_inputs) \
+            if x_feedback_inputs is not None else np.zeros(6)
+        xdot_feedback = (self.controllers["xdot"]).forward(xdot_feedback_inputs) \
+            if xdot_feedback_inputs is not None else np.zeros(6)
 
         # posture (JS) terms
         posture_q_term = (self.controllers["posture_q"]).forward(
@@ -817,17 +849,32 @@ class BulletRobot(object):
                           uncoupled=True, mass_compensation=True, joint_ori_check=True,
                           step_simulation=False):
         """
-        :param link_idx: link idx that the pose is relative to
-        :param x_feedback_inputs: inputs to compute feedback for "x"
-        :param xdot_feedback_inputs: inputs to compute feedback for "x"
-        :param posture_q_inputs: inputs to compute "q" related feedback (in task null space)
-        :param posture_qdot_inputs: inputs to compute "qdot" related feedback (in task null space)
-        # :param torque: true torques in offset frame (optional), defaults to having no effect
-        # :param xddot: acceleration term in offset frame (optional), defaults to all zero
-        :param offset_frame: pose of frame pt in frame of joint (idx)
-        :param grip_pos: gripper q to try to reach
-        :param uncoupled: if True, force and torque induced tau can be computed separately and added together
-        :param step_simulation: steps self.id sim
+
+        Parameters
+        ----------
+        link_idx:
+            link idx that the pose is relative to
+        x_feedback_inputs:
+            inputs to compute feedback for "x"
+        xdot_feedback_inputs:
+            inputs to compute feedback for "x"
+        posture_q_inputs:
+            inputs to compute "q" related feedback (in task null space)
+        posture_qdot_inputs:
+            inputs to compute "qdot" related feedback (in task null space)
+        offset_frame:
+            pose of frame pt in frame of joint (idx)
+        grip_pos:
+            gripper q to try to reach
+        uncoupled:
+            if True, force and torque induced tau can be computed separately and added together
+        step_simulation:
+            steps self.id sim
+        mass_compensation
+        joint_ori_check
+
+        Returns
+        -------
         """
 
         # logger.debug(x_feedback_inputs.desired - x_feedback_inputs.current)
