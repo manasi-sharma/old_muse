@@ -30,13 +30,12 @@ class DiffusionConvActionDecoder(ActionDecoder):
                  help='number of action steps in the future to predict (action horizon)'),
         Argument('n_obs_steps', type=int, required=True,
                  help='how many obs steps to condition on'),
-
         Argument('num_inference_steps', type=int, default=None,
                  help='How many inference steps to run'),
-
         Argument('use_ddim', action='store_true',
-                 help='Use DDIM as the default noise scheduler.')
-
+                 help='Use DDIM as the default noise scheduler.'),
+        Argument('use_parallel_ddpm', action='store_true',
+                 help='Use parallel DDPM as the default noise scheduler.')
     ]
 
     def _init_params_to_attrs(self, params: d):
@@ -70,6 +69,18 @@ class DiffusionConvActionDecoder(ActionDecoder):
                 beta_end=0.02,
                 beta_schedule='squaredcos_cap_v2',
                 set_alpha_to_one=True,
+                clip_sample=True,  # required when predict_epsilon=False
+                prediction_type='epsilon',  # or sample
+            )
+        elif self.use_parallel_ddpm:
+            import muse.models.diffusion.schedulers.batch_ddpm_scheduler as ddpm_sched
+            noise_scheduler = d(
+                cls=ddpm_sched.BatchDDPMScheduler,
+                num_train_timesteps=100,
+                beta_start=0.0001,
+                beta_end=0.02,
+                beta_schedule='squaredcos_cap_v2',
+                variance_type='fixed_small',  # Yilun's paper uses fixed_small_log instead, but easy to cause Nan
                 clip_sample=True,  # required when predict_epsilon=False
                 prediction_type='epsilon',  # or sample
             )
