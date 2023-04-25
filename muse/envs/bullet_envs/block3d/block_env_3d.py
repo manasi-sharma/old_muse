@@ -506,6 +506,10 @@ class BlockEnv3D(RobotBulletEnv):
             obs = d()
             obs.combine(self.robot.get_obs())
 
+            # normalize in obs to gripper range
+            obs['gripper_pos'] = -1 + 2 * (obs['gripper_pos'] - self.gripper_range[0]) / (self.gripper_range[1] -
+                                                                                          self.gripper_range[0])
+
             # print(obs.gripper_pos)
 
             # reward terms
@@ -1022,7 +1026,7 @@ if __name__ == '__main__':
     max_steps = 10000
 
     params = d(
-        render=False,
+        render=True,
         debug_cam_dist=0.35,
         debug_cam_p=-45,
         debug_cam_y=0,

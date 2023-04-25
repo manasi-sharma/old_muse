@@ -56,7 +56,7 @@ class RobotBulletEnv(Env, VRInterface):
     }
 
     action_high = {
-        'ee_euler': np.array([10., 10., 10., np.pi, np.pi, np.pi, 1.]),  # TODO gripper
+        'ee_euler': np.array([10., 10., 10., np.pi, np.pi, np.pi, 1.]),
         'ee_euler_delta': np.array([1.0, 1.0, 1.0, np.pi, np.pi, np.pi, 1.]),
         'ee_quat': np.array([10., 10., 10., 1., 1., 1., 1., 1.]),
         'ee_quat_delta': np.array([1.0, 1.0, 1.0, 1., 1., 1., 1., 1.]),
@@ -297,9 +297,9 @@ class RobotBulletEnv(Env, VRInterface):
 
         """
         # parse pos / orientation (dimension should match the conversion function input)
-        ee_pos = action[..., :3]
-        ori = action[..., 3:-1]
-        gripper = np.clip(action[..., -1:], -1, 1)  # -1 to 1
+        ee_pos = action[:3]
+        ori = action[3:-1]
+        gripper = np.clip(action[-1:], -1, 1)  # -1 to 1
         if 'euler' in self.action_mode:
             assert ori.shape[-1] == 3
             ee_eul = ori  # 3D
@@ -315,19 +315,18 @@ class RobotBulletEnv(Env, VRInterface):
         # turns action input to absolute ee euler (output space)
         if self.action_mode.endswith('delta'):
             if self.delta_pivot == 'ground_truth':
-                pivot = np.concatenate([self.get_ee_pos(), self.get_ee_eul()])[None]
+                pivot = np.concatenate([self.get_ee_pos(), self.get_ee_eul()])
             elif self.delta_pivot == 'expected':
-                pivot = self.last_action[..., :6]
+                pivot = self.last_action[:6]
             else:
                 raise NotImplementedError(self.delta_pivot)
 
             # ee pos / eul interpreted as delta
-            ee_pos = pivot[..., :3] + ee_pos
-            ee_eul = T.add_euler(ee_eul, pivot[..., :3])
+            ee_pos = pivot[:3] + ee_pos
+            ee_eul = T.add_euler(ee_eul, pivot[3:6])
 
         # un-scale gripper from (-1, 1) to gripper_range
         gripper = self.gripper_range[0] + (self.gripper_range[1] - self.gripper_range[0]) * (gripper + 1) * 0.5
-
         new_action = np.concatenate([ee_pos, ee_eul, gripper], axis=-1)
 
         self.last_action = new_action.copy()

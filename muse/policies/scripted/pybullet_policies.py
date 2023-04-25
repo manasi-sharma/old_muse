@@ -108,7 +108,10 @@ class WaypointPolicy(Policy):
         self._curr_step += 1
 
         if self._use_delta:
-            ac = np.concatenate([T.get_pose_error(desired_pose, ee_frame.as_pose()), [new_gr]])
+            ac = np.concatenate([desired_pose[:3] - ee_frame.pos,
+                                 T.fast_quat2euler(T.quat_difference(T.fast_euler2quat(desired_pose[3:6]),
+                                                                     ee_frame.orn)),
+                                 [new_gr]])
         else:
             ac = np.concatenate([desired_pose, [new_gr]])
 
@@ -139,7 +142,7 @@ class WaypointPolicy(Policy):
         # print(T.quat_angle(wp.cf.rot.as_quat(), T.euler2quat_ext(ori)))
         return np.linalg.norm(
             wp.cf.pos - pos) < self._tolerance and \
-               abs(T.quat_angle(wp.cf.rot.as_quat(), T.euler2quat(ori))) < self._ori_tolerance
+            abs(T.quat_angle(wp.cf.rot.as_quat(), T.euler2quat(ori))) < self._ori_tolerance
 
     def is_terminated(self, model, observation, goal, **kwargs) -> bool:
         return self._done
@@ -166,7 +169,7 @@ def get_lift_block_policy_params(obs, goal, env=None, random_motion=False, rando
     # index out batch and horizon
     pos, _, grq, od = (obs > keys).leaf_apply(lambda arr: to_numpy(arr[0, 0], check=True)).get_keys_required(keys)
 
-    base_ori = np.array([-np.pi, 0, -np.pi/2])
+    base_ori = np.array([-np.pi, 0, -np.pi / 2])
 
     base_offset = np.array([0.0, 0.0, 0.02])
     if random_ee_offset:
@@ -197,7 +200,7 @@ def get_lift_block_policy_params(obs, goal, env=None, random_motion=False, rando
 
     if random_ee_ori:
         # orientation along non grasping axis
-        pitch = np.random.uniform(-np.pi/6, np.pi/6)
+        pitch = np.random.uniform(-np.pi / 6, np.pi / 6)
         base_ori = (Rotation.from_euler("xyz", base_ori) * Rotation.from_euler("y", pitch)).as_euler("xyz")
 
     # print(np.rad2deg(obj_yaw), np.rad2deg(yaw))
@@ -270,7 +273,8 @@ if __name__ == '__main__':
     for ep in range(5):
         obs, goal = env.reset()
 
-        policy_params = get_lift_block_policy_params(dc_add_horizon_dim(obs), dc_add_horizon_dim(goal), env=env, random_ee_ori=True)
+        policy_params = get_lift_block_policy_params(dc_add_horizon_dim(obs), dc_add_horizon_dim(goal), env=env,
+                                                     random_ee_ori=True)
 
         policy.reset_policy(**policy_params.as_dict())
 
