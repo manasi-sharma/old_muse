@@ -165,7 +165,7 @@ class PolymetisPandaEnv(Env, VRInterface):
 
         # Return initial observation
         return self.get_obs()
-s
+
     def _reset_initialize(self, presets):
         from polymetis import GripperInterface, RobotInterface
         self.robot = RobotInterface(ip_address=self.franka_ip, enforce_version=False)
