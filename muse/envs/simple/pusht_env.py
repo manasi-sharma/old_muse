@@ -331,6 +331,8 @@ class PushTEnv(Env):
         self.latest_action = None
         self.reset_to_state = params['reset_to_state']
 
+        self._reward = 0
+
     # TO DO: add AttrDict presets to reset function
     def reset(self, presets=None):
         seed = self._seed
@@ -351,8 +353,12 @@ class PushTEnv(Env):
                 ])
         self._set_state(state)
 
+        self._reward = 0
+
         observation = self._get_obs()
-        return observation, AttrDict()
+
+        #goal_pose = self._get_goal_pose_body(self.goal_pose)
+        return observation, self._env_spec.map_to_types(AttrDict())
 
     # TO DO: action to AttrDict of action: action
     def step(self, action):
@@ -382,14 +388,17 @@ class PushTEnv(Env):
             import pdb;pdb.set_trace()
         goal_area = goal_geom.area
         coverage = intersection_area / goal_area
+
         reward = np.clip(coverage / self.success_threshold, 0, 1)
+        self._reward = reward
+
         done = coverage > self.success_threshold
 
         observation = self._get_obs()
         #info = self._get_info()
 
         #return observation, reward, done, info
-        return observation, AttrDict(), np.array([done])
+        return observation, self._env_spec.map_to_types(AttrDict()), np.array([done])
 
     # TO DO: AttrDict: This is a set of default params that you might use to instantiate the environment
     default_params = AttrDict(
@@ -411,14 +420,14 @@ class PushTEnv(Env):
                 ('agent/position', (2,), (0, 512), np.float64),
                 ('block/position', (2,), (0, 512), np.float64),
                 ('block/angle', (1,), (0, np.pi*2), np.float64),
-                ('goal_pose',(3,),(0,512), np.float64), # NOT SURE ABOUT THIS ONE
+                #('goal_pose',(3,),(0, 512), np.float64), # NOT SURE ABOUT THIS ONE
                 ('reward', (1,), (0, 1), np.float64),
                 ('action', (2,), (0, 512), np.float64),
             ],
             observation_names=['agent/position', 'block/position', 'block/angle'],
             output_observation_names=['reward'],
             action_names=['action'],
-            goal_names=['goal_pose'],
+            goal_names=[], #['goal_pose'],
             param_names=[],
             final_names=[],
         )
@@ -429,7 +438,9 @@ class PushTEnv(Env):
             tuple(self.agent.position) \
             + tuple(self.block.position) \
             + (self.block.angle % (2 * np.pi),))"""
-        obs = AttrDict()
+        obs = AttrDict(
+            reward=np.array([self._reward])[None]
+        )
         obs["agent/position"] = np.array(tuple(self.agent.position))
         obs["block/position"] = np.array(tuple(self.agent.position))
         obs["block/angle"] = np.array(tuple(self.agent.position))
@@ -554,7 +565,7 @@ class PushTEnv(Env):
             'pos_agent': np.array(self.agent.position),
             'vel_agent': np.array(self.agent.velocity),
             'block_pose': np.array(list(self.block.position) + [self.block.angle]),
-            'goal_pose': self.goal_pose,
+            #'goal_pose': self.goal_pose,
             'n_contacts': n_contact_points_per_step}
         return info   
     
@@ -623,9 +634,12 @@ if __name__ == '__main__':
     done = [False]
     i = 0
     while not done[0]:
-        i += 1
+        if i%10 == 0:
+            break
+        print("action: ", action)
         action = env.env_spec.get_uniform(env.env_spec.action_names, 1)
         obs, goal, done = env.step(action)
         #env.render(mode="human")
+        i += 1
 
     logger.debug('Done.')
