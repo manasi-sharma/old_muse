@@ -20,6 +20,7 @@ from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
 import shapely.geometry as sg
 
+from shapely.validation import make_valid
 
 SUPPORTED = {
     env_spec.id: env_spec
@@ -383,7 +384,7 @@ class PushTEnv(Env):
         block_geom = pymunk_to_shapely(self.block, self.block.shapes)
 
         try:
-            intersection_area = goal_geom.intersection(block_geom).area
+            intersection_area = make_valid(goal_geom).intersection(make_valid(block_geom)).area
         except:
             import pdb;pdb.set_trace()
         goal_area = goal_geom.area
