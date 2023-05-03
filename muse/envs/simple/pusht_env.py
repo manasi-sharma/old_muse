@@ -639,6 +639,8 @@ if __name__ == '__main__':
             break
         action = env.env_spec.get_uniform(env.env_spec.action_names, 1)
         print("action: ", action)
+        print("reward: ", env._reward)
+        print()
         obs, goal, done = env.step(action)
         #env.render(mode="human")
 
