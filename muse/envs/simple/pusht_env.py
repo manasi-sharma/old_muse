@@ -623,14 +623,9 @@ if __name__ == '__main__':
     done = [False]
     i = 0
     while not done[0]:
-        if i%10000 == 0:
-            print(i)
         i += 1
         action = env.env_spec.get_uniform(env.env_spec.action_names, 1)
         obs, goal, done = env.step(action)
-
-        if i%100000 == 0:
-            import pdb;pdb.set_trace()
         #env.render(mode="human")
 
     logger.debug('Done.')
