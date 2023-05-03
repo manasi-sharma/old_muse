@@ -385,6 +385,7 @@ class PushTEnv(Env):
 
         try:
             intersection_area = make_valid(goal_geom).intersection(make_valid(block_geom)).area
+            print("intersection_area: ", intersection_area)
         except:
             import pdb;pdb.set_trace()
         goal_area = goal_geom.area
