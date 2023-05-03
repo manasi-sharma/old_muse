@@ -621,6 +621,6 @@ if __name__ == '__main__':
     while not done[0]:
         action = env.env_spec.get_uniform(env.env_spec.action_names, 1)
         obs, goal, done = env.step(action)
-        env.render(mode="human")
+        #env.render(mode="human")
 
     logger.debug('Done.')
