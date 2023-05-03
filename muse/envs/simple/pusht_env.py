@@ -636,8 +636,8 @@ if __name__ == '__main__':
     while not done[0]:
         #if i%10 == 0:
         #    break
-        print("action: ", action)
         action = env.env_spec.get_uniform(env.env_spec.action_names, 1)
+        print("action: ", action)
         obs, goal, done = env.step(action)
         #env.render(mode="human")
         i += 1
