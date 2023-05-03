@@ -310,8 +310,11 @@ if __name__ == '__main__':
     env.reset()
 
     done = [False]
+    i = 0
     while not done[0]:
         action = env.env_spec.get_uniform(env.env_spec.action_names, 1)
         obs, goal, done = env.step(action)
+        i += 1
+    print(i)
 
     logger.debug('Done.')
