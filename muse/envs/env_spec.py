@@ -10,8 +10,8 @@ class EnvSpec(Spec):
         params = params.leaf_copy()
         self._done_key = get_with_default(params, "done_key", "done", map_fn=str)
         names_shapes_limits_dtypes = list(params.names_shapes_limits_dtypes)
-        names_shapes_limits_dtypes += [(self._done_key, (), (False, True), np.bool),
-                                       ('rollout_timestep', (), (0, 1e100), np.int)]
+        names_shapes_limits_dtypes += [(self._done_key, (), (False, True), bool), #np.bool),
+                                       ('rollout_timestep', (), (0, 1e100), int)] #np.int)]
         params.names_shapes_limits_dtypes = names_shapes_limits_dtypes
         super().__init__(params)
 
