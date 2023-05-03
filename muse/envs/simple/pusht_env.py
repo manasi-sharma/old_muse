@@ -376,8 +376,10 @@ class PushTEnv(Env):
         goal_geom = pymunk_to_shapely(goal_body, self.block.shapes)
         block_geom = pymunk_to_shapely(self.block, self.block.shapes)
 
-        import pdb;pdb.set_trace()
-        intersection_area = goal_geom.intersection(block_geom).area
+        try:
+            intersection_area = goal_geom.intersection(block_geom).area
+        except:
+            import pdb;pdb.set_trace()
         goal_area = goal_geom.area
         coverage = intersection_area / goal_area
         reward = np.clip(coverage / self.success_threshold, 0, 1)
